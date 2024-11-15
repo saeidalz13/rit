@@ -16,7 +16,10 @@ fn main() {
 
             add_rit(paths);
         }
-        Some(("init", _)) => init_rit(),
+        Some(("init", _)) => match init_rit() {
+            Ok(_) => println!("rit initalized!"),
+            Err(e) => println!("{:?}", e.to_string()),
+        },
         _ => unreachable!(),
     }
 }
