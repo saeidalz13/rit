@@ -1,5 +1,6 @@
 use rit::cli::commands;
 use rit::ops::add::add_rit;
+use rit::ops::init::init_rit;
 use std::path::PathBuf;
 
 fn main() {
@@ -13,9 +14,9 @@ fn main() {
                 .flatten()
                 .collect::<Vec<_>>();
 
-            println!("Adding {paths:?}")
+            add_rit(paths);
         }
-        Some(("init", _)) => add_rit(),
+        Some(("init", _)) => init_rit(),
         _ => unreachable!(),
     }
 }
