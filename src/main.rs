@@ -14,7 +14,10 @@ fn main() {
                 .flatten()
                 .collect::<Vec<_>>();
 
-            add_rit(paths);
+            match add_rit(paths) {
+                Ok(_) => println!("files added"),
+                Err(e) => println!("{}", e.to_string()),
+            };
         }
         Some(("init", _)) => match init_rit() {
             Ok(_) => println!("rit initalized!"),
