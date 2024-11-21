@@ -1,17 +1,19 @@
 use sha2::{Digest, Sha256};
-use std::io::{self, Read, Write};
-use std::os::unix::fs::{FileExt, MetadataExt};
+use std::io::{self, ErrorKind, Read, Write};
+use std::os::unix::fs::MetadataExt;
 use std::{
     fs,
     path::{Path, PathBuf},
 };
 
+#[derive(Debug)]
 struct IndexHeader {
     num_entries: u32,   // 3
     version: u32,       // 2
     signature: [u8; 4], // 1
 }
 
+#[derive(Debug)]
 struct IndexEntry {
     ctime: (u32, u32), // when file's metadata was last changed (seconds and nanoseconds)
     mtime: (u32, u32), // when file's content was last modified (seconds and nanoseconds)
@@ -24,15 +26,14 @@ struct IndexEntry {
 }
 
 fn read_index() -> io::Result<(IndexHeader, Vec<IndexEntry>)> {
-    let index_path = Path::new("./rit/INDEX");
+    let index_path = Path::new("./.rit/INDEX");
     let mut buffer = vec![];
 
     let mut f = fs::File::open(&index_path)?;
     f.read_to_end(&mut buffer)?;
 
     // first 4 bytes are the signature
-    let signature = &buffer[..4];
-    if signature != b"DIRC" {
+    if &buffer[..4] != b"DIRC" {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             "Invalid INDEX file format",
@@ -93,16 +94,16 @@ fn read_index() -> io::Result<(IndexHeader, Vec<IndexEntry>)> {
 
 fn get_objects_path() -> Result<PathBuf, io::Error> {
     let rit_dir = Path::new(".rit");
-    let parent_dir = rit_dir.join("objects");
+    let objects_path = rit_dir.join("objects");
 
-    if !parent_dir.exists() {
+    if !objects_path.exists() {
         return Err(io::Error::new(
             io::ErrorKind::NotFound,
             "No .rit directory found",
         ));
     }
 
-    Ok(parent_dir)
+    Ok(objects_path)
 }
 
 fn get_hash_from_file(content: &Vec<u8>) -> (String, Vec<u8>) {
@@ -112,11 +113,11 @@ fn get_hash_from_file(content: &Vec<u8>) -> (String, Vec<u8>) {
     (format!("{:x}", hash_result), hash_result.to_vec())
 }
 
-fn save_file_hash(file_hash: &String, parent_dir: &PathBuf, content: &Vec<u8>) -> io::Result<()> {
+fn save_file_hash(file_hash: &String, objects_path: &PathBuf, content: &Vec<u8>) -> io::Result<()> {
     let folder_name = &file_hash[..2];
     let file_name = &file_hash[2..];
 
-    let path_name = Path::join(&parent_dir, folder_name);
+    let path_name = Path::join(&objects_path, folder_name);
     fs::create_dir(&path_name)?;
 
     let final_path = Path::join(&path_name, file_name);
@@ -125,7 +126,7 @@ fn save_file_hash(file_hash: &String, parent_dir: &PathBuf, content: &Vec<u8>) -
 }
 
 fn add_index(header: IndexHeader, index_entries: Vec<IndexEntry>) {
-    let index_path = Path::new("./rit/INDEX");
+    let index_path = Path::new("./.rit/INDEX");
     let mut f = if index_path.exists() {
         fs::OpenOptions::new()
             .read(true)
@@ -158,15 +159,40 @@ fn add_index(header: IndexHeader, index_entries: Vec<IndexEntry>) {
     }
 }
 
+/// This should add the series of files requested by user.
+/// First it checks what files exist if .rit/INDEX exists.
+/// If the required files already added, then it does nothing.
+/// Any new requested files will be added.
 pub fn add_rit(paths: Vec<&PathBuf>) -> Result<bool, Box<dyn std::error::Error>> {
-    let parent_dir;
-
+    let objects_path;
     match get_objects_path() {
-        Ok(dir) => parent_dir = dir,
+        Ok(dir) => objects_path = dir,
         Err(e) => return Err(Box::new(e)),
     }
 
     let mut index_entries: Vec<IndexEntry> = vec![];
+    let mut header = IndexHeader {
+        num_entries: index_entries.len() as u32,
+        signature: *b"DIRC",
+        version: 3,
+    };
+    let mut existing_paths = vec![];
+    match read_index() {
+        Ok(res) => {
+            header = res.0;
+            index_entries = res.1;
+        }
+        Err(e) => {
+            if e.kind() != ErrorKind::NotFound {
+                return Err(e.into());
+            }
+        }
+    }
+
+    for ie in &index_entries {
+        existing_paths.push(ie.file_path.clone());
+    }
+
     let mut success: usize = 0;
     for path in &paths {
         if !path.exists() {
@@ -174,19 +200,31 @@ pub fn add_rit(paths: Vec<&PathBuf>) -> Result<bool, Box<dyn std::error::Error>>
             continue;
         }
 
+        let file_path = format!("{}\0", path.to_string_lossy());
+        if existing_paths.contains(&file_path) {
+            println!("this file already added.");
+            continue;
+        }
+
         if path.is_file() {
             let content = fs::read(path)?;
             let (file_hash, hash_vec) = get_hash_from_file(&content);
 
-            match save_file_hash(&file_hash, &parent_dir, &content) {
-                Ok(_) => success += 1,
-                Err(_) => continue,
+            match save_file_hash(&file_hash, &objects_path, &content) {
+                Ok(_) => {}
+                Err(e) => {
+                    println!("hash save error: {}", e);
+                    continue;
+                }
             }
 
             let md;
             match fs::metadata(path) {
                 Ok(m) => md = m,
-                Err(_) => continue,
+                Err(e) => {
+                    println!("reading metadata error: {}", e);
+                    continue;
+                }
             }
 
             let ie = IndexEntry {
@@ -199,19 +237,15 @@ pub fn add_rit(paths: Vec<&PathBuf>) -> Result<bool, Box<dyn std::error::Error>>
                 sha_hash: hash_vec,
 
                 // string must be null-terminated
-                file_path: format!("{}\0", path.to_string_lossy()),
+                file_path,
             };
             index_entries.push(ie);
+            header.num_entries += 1;
+            success += 1;
         } else {
             println!("directory not supported for now");
         }
     }
-
-    let header = IndexHeader {
-        num_entries: index_entries.len() as u32,
-        signature: *b"DIRC",
-        version: 3,
-    };
 
     add_index(header, index_entries);
 
