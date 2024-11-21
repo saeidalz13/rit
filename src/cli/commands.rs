@@ -16,5 +16,7 @@ pub fn get_commands() -> Command {
         )
         // init command
         .subcommand(Command::new("init").about("initialize a repo"))
+        // status command
+        .subcommand(Command::new("status").about("checks the status of rit dir"))
     // ...
 }

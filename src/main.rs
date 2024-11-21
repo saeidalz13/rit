@@ -1,6 +1,7 @@
 use rit::cli::commands;
 use rit::ops::add::add_rit;
 use rit::ops::init::init_rit;
+use rit::ops::status::status_rit;
 use std::path::PathBuf;
 
 fn main() {
@@ -19,10 +20,14 @@ fn main() {
                 Err(e) => println!("{}", e.to_string()),
             };
         }
+
         Some(("init", _)) => match init_rit() {
             Ok(_) => println!("rit initalized!"),
             Err(e) => println!("{:?}", e.to_string()),
         },
+
+        Some(("status", _)) => status_rit(),
+
         _ => unreachable!(),
     }
 }
