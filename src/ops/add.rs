@@ -1,96 +1,12 @@
 use sha2::{Digest, Sha256};
-use std::io::{self, ErrorKind, Read, Write};
+use std::io::{self, ErrorKind, Write};
 use std::os::unix::fs::MetadataExt;
 use std::{
     fs,
     path::{Path, PathBuf},
 };
 
-#[derive(Debug)]
-struct IndexHeader {
-    num_entries: u32,   // 3
-    version: u32,       // 2
-    signature: [u8; 4], // 1
-}
-
-#[derive(Debug)]
-struct IndexEntry {
-    ctime: (u32, u32), // when file's metadata was last changed (seconds and nanoseconds)
-    mtime: (u32, u32), // when file's content was last modified (seconds and nanoseconds)
-    device: u32,
-    inode: u32,
-    mode: u32,
-    size: u32,
-    sha_hash: Vec<u8>, // SHA 256
-    file_path: String, // Relative path of file from root, stored as null-terminated str
-}
-
-fn read_index() -> io::Result<(IndexHeader, Vec<IndexEntry>)> {
-    let index_path = Path::new("./.rit/INDEX");
-    let mut buffer = vec![];
-
-    let mut f = fs::File::open(&index_path)?;
-    f.read_to_end(&mut buffer)?;
-
-    // first 4 bytes are the signature
-    if &buffer[..4] != b"DIRC" {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "Invalid INDEX file format",
-        ));
-    }
-
-    let version = u32::from_be_bytes(buffer[4..8].try_into().unwrap());
-    let num_entries = u32::from_be_bytes(buffer[8..12].try_into().unwrap());
-
-    let header = IndexHeader {
-        num_entries,
-        version,
-        signature: *b"DIRC",
-    };
-
-    // Index
-    let mut entries = vec![];
-    let mut offset = 12;
-
-    for _ in 0..num_entries {
-        let ctime_sec = u32::from_be_bytes(buffer[offset..offset + 4].try_into().unwrap());
-        let ctime_nsec = u32::from_be_bytes(buffer[offset + 4..offset + 8].try_into().unwrap());
-        let mtime_sec = u32::from_be_bytes(buffer[offset + 8..offset + 12].try_into().unwrap());
-        let mtime_nsec = u32::from_be_bytes(buffer[offset + 12..offset + 16].try_into().unwrap());
-        let device = u32::from_be_bytes(buffer[offset + 16..offset + 20].try_into().unwrap());
-        let inode = u32::from_be_bytes(buffer[offset + 20..offset + 24].try_into().unwrap());
-        let mode = u32::from_be_bytes(buffer[offset + 24..offset + 28].try_into().unwrap());
-        let size = u32::from_be_bytes(buffer[offset + 28..offset + 32].try_into().unwrap());
-        let sha_hash = buffer[offset + 32..offset + 64].to_vec();
-
-        let mut b: i32 = -1;
-        let mut pos = offset + 64;
-        while b != 0 {
-            b = buffer[pos] as i32;
-            pos += 1;
-        }
-
-        let file_path = String::from_utf8_lossy(&buffer[offset + 64..pos]).to_string();
-
-        entries.push(IndexEntry {
-            ctime: (ctime_sec, ctime_nsec),
-            mtime: (mtime_sec, mtime_nsec),
-            device,
-            inode,
-            mode,
-            size,
-            sha_hash,
-            file_path,
-        });
-
-        // Align to 8-byte boundary
-        offset = pos + 1;
-        offset = (offset + 7) & !7;
-    }
-
-    Ok((header, entries))
-}
+use crate::utils::ioutils::{read_index, IndexEntry, IndexHeader};
 
 fn get_objects_path() -> Result<PathBuf, io::Error> {
     let rit_dir = Path::new(".rit");
@@ -139,9 +55,9 @@ fn add_index(header: IndexHeader, index_entries: Vec<IndexEntry>) {
 
     if f.metadata().unwrap().len() == 0 {
         // Write header if the file is empty
-        let _ = f.write_all(&header.signature);
-        let _ = f.write(&header.version.to_be_bytes());
-        let _ = f.write(&header.num_entries.to_be_bytes());
+        let _ = f.write(&header.signature());
+        let _ = f.write(&header.version().to_be_bytes());
+        let _ = f.write(&header.num_entries().to_be_bytes());
     }
 
     // Index
@@ -171,11 +87,7 @@ pub fn add_rit(paths: Vec<&PathBuf>) -> Result<bool, Box<dyn std::error::Error>>
     }
 
     let mut index_entries: Vec<IndexEntry> = vec![];
-    let mut header = IndexHeader {
-        num_entries: index_entries.len() as u32,
-        signature: *b"DIRC",
-        version: 3,
-    };
+    let mut header = IndexHeader::new(index_entries.len() as u32, 3, *b"DIRC");
     let mut existing_paths = vec![];
     match read_index() {
         Ok(res) => {
@@ -240,7 +152,7 @@ pub fn add_rit(paths: Vec<&PathBuf>) -> Result<bool, Box<dyn std::error::Error>>
                 file_path,
             };
             index_entries.push(ie);
-            header.num_entries += 1;
+            header.increment_num_entries();
             success += 1;
         } else {
             println!("directory not supported for now");
