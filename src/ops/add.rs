@@ -1,12 +1,12 @@
 use sha2::{Digest, Sha256};
-use std::io::{self, ErrorKind, Write};
+use std::io::{self, ErrorKind};
 use std::os::unix::fs::MetadataExt;
 use std::{
     fs,
     path::{Path, PathBuf},
 };
 
-use crate::utils::ioutils::{read_index, IndexEntry, IndexHeader};
+use crate::utils::ioutils::{add_index, read_index, IndexEntry, IndexHeader};
 
 fn get_objects_path() -> Result<PathBuf, io::Error> {
     let rit_dir = Path::new(".rit");
@@ -39,40 +39,6 @@ fn save_file_hash(file_hash: &String, objects_path: &PathBuf, content: &Vec<u8>)
     let final_path = Path::join(&path_name, file_name);
 
     fs::write(final_path, &content)
-}
-
-fn add_index(header: IndexHeader, index_entries: Vec<IndexEntry>) {
-    let index_path = Path::new("./.rit/INDEX");
-    let mut f = if index_path.exists() {
-        fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(index_path)
-            .expect("Failed to open INDEX")
-    } else {
-        fs::File::create(index_path).expect("Failed to create INDEX")
-    };
-
-    if f.metadata().unwrap().len() == 0 {
-        // Write header if the file is empty
-        let _ = f.write(&header.signature());
-        let _ = f.write(&header.version().to_be_bytes());
-        let _ = f.write(&header.num_entries().to_be_bytes());
-    }
-
-    // Index
-    for ie in index_entries {
-        let _ = f.write(&ie.ctime.0.to_be_bytes());
-        let _ = f.write(&ie.ctime.1.to_be_bytes());
-        let _ = f.write(&ie.mtime.0.to_be_bytes());
-        let _ = f.write(&ie.mtime.1.to_be_bytes());
-        let _ = f.write(&ie.device.to_be_bytes());
-        let _ = f.write(&ie.inode.to_be_bytes());
-        let _ = f.write(&ie.mode.to_be_bytes());
-        let _ = f.write(&ie.size.to_be_bytes());
-        let _ = f.write(&ie.sha_hash[..]);
-        let _ = f.write(&ie.file_path.as_bytes());
-    }
 }
 
 /// This should add the series of files requested by user.
@@ -112,7 +78,9 @@ pub fn add_rit(paths: Vec<&PathBuf>) -> Result<bool, Box<dyn std::error::Error>>
             continue;
         }
 
-        let file_path = format!("{}\0", path.to_string_lossy());
+        let file_path = format!("{}", Path::new(".").join(path).to_string_lossy());
+        let file_path_len = file_path.as_bytes().len() as u32;
+
         if existing_paths.contains(&file_path) {
             println!("this file already added.");
             continue;
@@ -149,6 +117,7 @@ pub fn add_rit(paths: Vec<&PathBuf>) -> Result<bool, Box<dyn std::error::Error>>
                 sha_hash: hash_vec,
 
                 // string must be null-terminated
+                file_path_len,
                 file_path,
             };
             index_entries.push(ie);
@@ -159,7 +128,7 @@ pub fn add_rit(paths: Vec<&PathBuf>) -> Result<bool, Box<dyn std::error::Error>>
         }
     }
 
-    add_index(header, index_entries);
+    add_index(header, index_entries)?;
 
     if success != paths.len() {
         Err("unsuccessful add operation".into())

@@ -1,4 +1,4 @@
-use std::io::{self, Read};
+use std::io::{self, Read, Write};
 use std::{fs, path::Path};
 
 #[derive(Debug)]
@@ -47,12 +47,12 @@ pub struct IndexEntry {
     pub mode: u32,
     pub size: u32,
     pub sha_hash: Vec<u8>, // SHA 256
+    pub file_path_len: u32,
     pub file_path: String, // Relative path of file from root, stored as null-terminated str
 }
 
 fn extract_header(b: &Vec<u8>) -> io::Result<IndexHeader> {
     // first 4 bytes are the signature
-    println!("{:?}", &b[..4]);
     if &b[..4] != b"DIRC" {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
@@ -81,15 +81,12 @@ fn create_index_entry_from_bytes(buffer: &Vec<u8>, offset: usize) -> (IndexEntry
     let size = u32::from_be_bytes(buffer[offset + 28..offset + 32].try_into().unwrap());
     let sha_hash = buffer[offset + 32..offset + 64].to_vec();
 
-    let mut b: i32 = -1;
     let mut pos = offset + 64;
-    while b != 0 {
-        b = buffer[pos] as i32;
-        pos += 1;
-    }
+    let file_path_len = u32::from_be_bytes(buffer[pos..pos + 4].try_into().unwrap());
+    pos += 4;
 
-    let file_path = String::from_utf8_lossy(&buffer[offset + 64..pos]).to_string();
-
+    let file_path = String::from_utf8_lossy(&buffer[pos..pos + file_path_len as usize]).to_string();
+    pos += file_path_len as usize;
     (
         IndexEntry {
             ctime: (ctime_sec, ctime_nsec),
@@ -99,6 +96,7 @@ fn create_index_entry_from_bytes(buffer: &Vec<u8>, offset: usize) -> (IndexEntry
             mode,
             size,
             sha_hash,
+            file_path_len,
             file_path,
         },
         pos,
@@ -107,19 +105,19 @@ fn create_index_entry_from_bytes(buffer: &Vec<u8>, offset: usize) -> (IndexEntry
 
 pub fn read_index() -> io::Result<(IndexHeader, Vec<IndexEntry>)> {
     let index_path = Path::new("./.rit/INDEX");
-    let mut buffer = vec![];
-
     let mut f = fs::File::open(&index_path)?;
+
+    let mut buffer = vec![];
     f.read_to_end(&mut buffer)?;
 
     let header = extract_header(&buffer)?;
 
-    // Index Entries
     let mut entries = vec![];
     let mut offset = 12;
 
     for _ in 0..header.num_entries {
         let (ie, pos) = create_index_entry_from_bytes(&buffer, offset);
+        println!("entry: {:?}", ie);
         entries.push(ie);
 
         // Align to 8-byte boundary
@@ -128,4 +126,43 @@ pub fn read_index() -> io::Result<(IndexHeader, Vec<IndexEntry>)> {
     }
 
     Ok((header, entries))
+}
+
+pub fn add_index(index_header: IndexHeader, index_entries: Vec<IndexEntry>) -> io::Result<bool> {
+    let index_path = Path::new("./.rit/INDEX");
+    let mut f = if index_path.exists() {
+        fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(index_path)?
+    } else {
+        fs::File::create(index_path)?
+    };
+
+    // println!("{:?}", index_header);
+    // println!("{:?}", index_entries);
+
+    if f.metadata().unwrap().len() == 0 {
+        // Write header if the file is empty
+        f.write(&index_header.signature())?;
+        f.write(&index_header.version().to_be_bytes())?;
+        f.write(&index_header.num_entries().to_be_bytes())?;
+    }
+
+    // Index
+    for ie in index_entries {
+        f.write(&ie.ctime.0.to_be_bytes())?;
+        f.write(&ie.ctime.1.to_be_bytes())?;
+        f.write(&ie.mtime.0.to_be_bytes())?;
+        f.write(&ie.mtime.1.to_be_bytes())?;
+        f.write(&ie.device.to_be_bytes())?;
+        f.write(&ie.inode.to_be_bytes())?;
+        f.write(&ie.mode.to_be_bytes())?;
+        f.write(&ie.size.to_be_bytes())?;
+        f.write(&ie.sha_hash[..])?;
+        f.write(&ie.file_path_len.to_be_bytes())?;
+        f.write(&ie.file_path.as_bytes())?;
+    }
+
+    Ok(true)
 }
