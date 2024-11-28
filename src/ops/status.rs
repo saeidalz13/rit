@@ -137,6 +137,7 @@ pub fn status_rit() {
 
     println!("---------------------------");
     println!("\u{1b}[1;31mUntracked:\u{1b}[0m");
+    println!("To add the file:\n>> rit add <PATH>...");
     for up in untracked_paths {
         println!("\t\u{1b}[1;31m*\u{1b}[0m {}", up.display());
     }
