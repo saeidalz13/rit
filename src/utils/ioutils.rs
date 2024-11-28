@@ -133,7 +133,7 @@ pub fn add_index(index_header: IndexHeader, index_entries: Vec<IndexEntry>) -> i
         fs::OpenOptions::new()
             .read(true)
             .write(true)
-            .append(true)
+            // .append(true)
             .open(index_path)?
     } else {
         fs::File::create(index_path)?
@@ -141,7 +141,7 @@ pub fn add_index(index_header: IndexHeader, index_entries: Vec<IndexEntry>) -> i
 
     // Check if file is empty, write header
     // if f.metadata().unwrap().len() == 0 {}
-    let mut pos = f.metadata()?.len() as usize;
+    let mut pos = 0 as usize;
     pos += f.write(&index_header.signature())?;
     pos += f.write(&index_header.version().to_be_bytes())?;
     pos += f.write(&index_header.num_entries().to_be_bytes())?;

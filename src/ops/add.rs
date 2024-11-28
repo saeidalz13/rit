@@ -1,4 +1,3 @@
-use sha2::{Digest, Sha256};
 use std::io::{self, ErrorKind};
 use std::os::unix::fs::MetadataExt;
 use std::{
@@ -51,7 +50,7 @@ fn is_path_processable(path: &PathBuf) -> bool {
 
 fn get_file_path_info(path: &PathBuf) -> (String, u32) {
     let file_path;
-    if !path.is_absolute() {
+    if !path.to_str().unwrap().starts_with("./") {
         file_path = format!("{}", Path::new(".").join(path).to_string_lossy());
     } else {
         file_path = format!("{}", path.to_string_lossy());
@@ -101,6 +100,7 @@ pub fn add_rit(paths: Vec<&PathBuf>) -> Result<bool, Box<dyn std::error::Error>>
         let (file_path, file_path_len) = get_file_path_info(path);
 
         if existing_paths.contains(&file_path) {
+            header.increment_num_entries();
             println!("this file already added.");
             continue;
         }
