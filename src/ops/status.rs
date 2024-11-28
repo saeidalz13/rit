@@ -1,5 +1,6 @@
-use crate::utils::ioutils::read_index;
+use crate::utils::{hashutils::get_hash_from_file, ioutils::read_index};
 use std::{
+    fs::read,
     fs::read_dir,
     io::ErrorKind,
     path::{Path, PathBuf},
@@ -86,25 +87,40 @@ fn get_rit_paths(ignore_list: Vec<PathBuf>) -> Vec<PathBuf> {
 /// 4. Check if the files added have been changed (based on hash)
 /// 5. Show the added paths as green, untracked paths as red, and modified as yellow
 pub fn status_rit() {
+    if !Path::new(".rit").exists() {
+        eprintln!("rit has not been initialized in this dir!\n\nrun this command:\n> rit init");
+        return;
+    }
+
     let rit_paths = get_rit_paths(get_ignore_list());
 
     let mut untracked_paths: Vec<PathBuf> = vec![];
     let mut tracked_paths: Vec<PathBuf> = vec![];
-    // let mut modified_paths = vec![];
+    let mut modified_paths = vec![];
 
     match read_index() {
-        Ok((ih, ies)) => {
-            println!("{:?}", ih);
+        Ok((_, ies)) => {
+            'outer_loop: for rp in rit_paths.iter() {
+                if let Some(rp_str) = rp.to_str() {
+                    for ie in ies.iter() {
+                        if rp_str == ie.file_path {
+                            // TODO:
+                            // Add hashing the file content to check
+                            // if the file has been modified
+                            let content = read(Path::new(rp_str)).unwrap();
+                            let (_, hash_vec) = get_hash_from_file(&content);
 
-            // iter() mean immutable borrow of the variables
-            for ie in ies.iter() {
-                for rp in rit_paths.clone().into_iter() {
-                    if rp.to_str().unwrap() == ie.file_path {
-                        tracked_paths.push(rp);
-                    } else {
-                        untracked_paths.push(rp);
+                            if hash_vec != ie.sha_hash {
+                                modified_paths.push(rp.to_path_buf());
+                            } else {
+                                tracked_paths.push(rp.to_path_buf());
+                            }
+
+                            continue 'outer_loop;
+                        }
                     }
                 }
+                untracked_paths.push(rp.to_path_buf());
             }
         }
         Err(e) => {
@@ -129,5 +145,11 @@ pub fn status_rit() {
     println!("\u{1b}[1;32mTracked:\u{1b}[0m");
     for tp in tracked_paths {
         println!("\t\u{1b}[1;32m$\u{1b}[0m {}", tp.display());
+    }
+
+    println!("---------------------------");
+    println!("\u{1b}[1;33mModified:\u{1b}[0m");
+    for mp in modified_paths {
+        println!("\t\u{1b}[1;33m>\u{1b}[0m {}", mp.display());
     }
 }

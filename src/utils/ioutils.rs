@@ -117,12 +117,11 @@ pub fn read_index() -> io::Result<(IndexHeader, Vec<IndexEntry>)> {
 
     for _ in 0..header.num_entries {
         let (ie, pos) = create_index_entry_from_bytes(&buffer, offset);
-        println!("entry: {:?}", ie);
         entries.push(ie);
 
         // Align to 8-byte boundary
-        offset = pos + 1;
-        offset = (offset + 7) & !7;
+        // offset = pos + 1;
+        offset = (pos + 7) & !7;
     }
 
     Ok((header, entries))
@@ -134,34 +133,39 @@ pub fn add_index(index_header: IndexHeader, index_entries: Vec<IndexEntry>) -> i
         fs::OpenOptions::new()
             .read(true)
             .write(true)
+            // .append(true)
             .open(index_path)?
     } else {
         fs::File::create(index_path)?
     };
 
-    // println!("{:?}", index_header);
-    // println!("{:?}", index_entries);
-
-    if f.metadata().unwrap().len() == 0 {
-        // Write header if the file is empty
-        f.write(&index_header.signature())?;
-        f.write(&index_header.version().to_be_bytes())?;
-        f.write(&index_header.num_entries().to_be_bytes())?;
-    }
+    // Check if file is empty, write header
+    // if f.metadata().unwrap().len() == 0 {}
+    let mut pos = 0 as usize;
+    pos += f.write(&index_header.signature())?;
+    pos += f.write(&index_header.version().to_be_bytes())?;
+    pos += f.write(&index_header.num_entries().to_be_bytes())?;
 
     // Index
     for ie in index_entries {
-        f.write(&ie.ctime.0.to_be_bytes())?;
-        f.write(&ie.ctime.1.to_be_bytes())?;
-        f.write(&ie.mtime.0.to_be_bytes())?;
-        f.write(&ie.mtime.1.to_be_bytes())?;
-        f.write(&ie.device.to_be_bytes())?;
-        f.write(&ie.inode.to_be_bytes())?;
-        f.write(&ie.mode.to_be_bytes())?;
-        f.write(&ie.size.to_be_bytes())?;
-        f.write(&ie.sha_hash[..])?;
-        f.write(&ie.file_path_len.to_be_bytes())?;
-        f.write(&ie.file_path.as_bytes())?;
+        pos += f.write(&ie.ctime.0.to_be_bytes())?;
+        pos += f.write(&ie.ctime.1.to_be_bytes())?;
+        pos += f.write(&ie.mtime.0.to_be_bytes())?;
+        pos += f.write(&ie.mtime.1.to_be_bytes())?;
+        pos += f.write(&ie.device.to_be_bytes())?;
+        pos += f.write(&ie.inode.to_be_bytes())?;
+        pos += f.write(&ie.mode.to_be_bytes())?;
+        pos += f.write(&ie.size.to_be_bytes())?;
+        pos += f.write(&ie.sha_hash[..])?;
+        pos += f.write(&ie.file_path_len.to_be_bytes())?;
+        pos += f.write(&ie.file_path.as_bytes())?;
+
+        // TODO: Add 8-byte alignment padding
+        let alignment_offset = (8 - (pos % 8)) % 8;
+        if alignment_offset > 0 {
+            f.write_all(&vec![0; alignment_offset])?;
+            pos += alignment_offset;
+        }
     }
 
     Ok(true)
