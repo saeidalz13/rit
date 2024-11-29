@@ -29,13 +29,9 @@ pub fn exec_cli() {
         Some(("status", _)) => status_rit(),
 
         Some(("commit", sub_matches)) => {
-            let commit_msg = sub_matches
-                .get_one::<String>("message")
-                .unwrap()
-                .trim()
-                .to_owned();
+            let commit_msg = sub_matches.get_one::<String>("message").unwrap().trim();
 
-            commit_rit(&commit_msg);
+            commit_rit(commit_msg);
         }
 
         _ => unreachable!(),
