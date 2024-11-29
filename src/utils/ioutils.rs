@@ -1,4 +1,5 @@
 use std::io::{self, Read, Write};
+use std::path::PathBuf;
 use std::{fs, path::Path};
 
 #[derive(Debug)]
@@ -169,4 +170,34 @@ pub fn add_index(index_header: IndexHeader, index_entries: Vec<IndexEntry>) -> i
     }
 
     Ok(true)
+}
+
+pub fn save_file_hash(
+    file_hash: &String,
+    objects_path: &PathBuf,
+    content: &Vec<u8>,
+) -> io::Result<()> {
+    let folder_name = &file_hash[..2];
+    let file_name = &file_hash[2..];
+
+    let path_name = Path::join(&objects_path, folder_name);
+    fs::create_dir(&path_name)?;
+
+    let final_path = Path::join(&path_name, file_name);
+
+    fs::write(final_path, &content)
+}
+
+pub fn get_objects_path() -> Result<PathBuf, io::Error> {
+    let rit_dir = Path::new(".rit");
+    let objects_path = rit_dir.join("objects");
+
+    if !objects_path.exists() {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            "No .rit directory found",
+        ));
+    }
+
+    Ok(objects_path)
 }

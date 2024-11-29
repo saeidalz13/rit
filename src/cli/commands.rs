@@ -18,5 +18,15 @@ pub fn get_commands() -> Command {
         .subcommand(Command::new("init").about("initialize a repo"))
         // status command
         .subcommand(Command::new("status").about("checks the status of rit dir"))
+        // commit command
+        .subcommand(
+            Command::new("commit")
+                .about("commits the staged files")
+                .arg_required_else_help(true)
+                .arg(
+                    arg!(-m --message <COMMIT_MSG> "The commit message")
+                        .value_parser(value_parser!(String)),
+                ),
+        )
     // ...
 }
