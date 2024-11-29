@@ -33,7 +33,7 @@ use std::{
 const ASCII_CHAR_SPACE: u8 = 32;
 const ASCII_CHAR_NEWLINE: u8 = 10;
 
-fn create_tree_file(objects_path: &PathBuf) -> Result<String, Box<dyn std::error::Error>> {
+fn create_tree_file(objects_path: &PathBuf) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     let (_, ies) = ioutils::read_index()?;
 
     let mut tree_content: Vec<u8> = Vec::new();
@@ -54,10 +54,10 @@ fn create_tree_file(objects_path: &PathBuf) -> Result<String, Box<dyn std::error
         tree_content.push(ASCII_CHAR_NEWLINE); // new line
     }
 
-    let (tree_file_name, _) = get_hash_from_file(&tree_content);
+    let (tree_file_name, tree_file_hash) = get_hash_from_file(&tree_content);
     ioutils::save_file_hash(&tree_file_name, objects_path, &tree_content)?;
 
-    Ok(tree_file_name)
+    Ok(tree_file_hash)
 }
 
 // fn create_commit_file() {}
@@ -65,7 +65,7 @@ fn create_tree_file(objects_path: &PathBuf) -> Result<String, Box<dyn std::error
 pub fn commit_rit(commit_msg: &str) {
     let objects_path = ioutils::get_objects_path().unwrap();
 
-    let tree_file_name: String;
+    let tree_file_name: Vec<u8>;
     match create_tree_file(&objects_path) {
         Ok(p) => tree_file_name = p,
 
@@ -86,7 +86,7 @@ pub fn commit_rit(commit_msg: &str) {
     let mut commit_content: Vec<u8> = Vec::new();
 
     commit_content.extend_from_slice(b"tree ");
-    commit_content.extend_from_slice(tree_file_name.as_bytes());
+    commit_content.extend_from_slice(&tree_file_name);
     commit_content.push(ASCII_CHAR_NEWLINE);
     if !parent_commit_hash.is_empty() {
         commit_content.extend_from_slice(parent_commit_hash.as_bytes());
@@ -94,15 +94,8 @@ pub fn commit_rit(commit_msg: &str) {
     }
 
     // todo!("add date and permission for both author and committer");
-    commit_content.extend_from_slice(b"author ");
-    commit_content.extend_from_slice(b"saeid ");
-    commit_content.extend_from_slice(b"saeidalz96@gmail.com ");
-    commit_content.push(ASCII_CHAR_NEWLINE);
-
-    commit_content.extend_from_slice(b"committer ");
-    commit_content.extend_from_slice(b"saeid ");
-    commit_content.extend_from_slice(b"saeidalz96@gmail.com ");
-    commit_content.push(ASCII_CHAR_NEWLINE);
+    commit_content.extend_from_slice(b"author saeid saeidalz96@gmail.com\n");
+    commit_content.extend_from_slice(b"committer saeid saeidalz96@gmail.com\n");
 
     commit_content.push(ASCII_CHAR_NEWLINE);
     commit_content.extend_from_slice(commit_msg.as_bytes());
@@ -112,9 +105,10 @@ pub fn commit_rit(commit_msg: &str) {
 
     let mut f: fs::File;
     if main_file_exists {
-        f = fs::File::open(main_file).unwrap();
-    } else {
         f = fs::OpenOptions::new().write(true).open(main_file).unwrap();
+    } else {
+        fs::create_dir_all(main_file.parent().unwrap()).unwrap();
+        f = fs::File::create(main_file).unwrap();
     }
     f.write(&commit_file_hash).unwrap();
 }
