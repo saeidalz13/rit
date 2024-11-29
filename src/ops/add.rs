@@ -1,4 +1,4 @@
-use std::io::{self, ErrorKind};
+use std::io::ErrorKind;
 use std::os::unix::fs::MetadataExt;
 use std::{
     fs,
@@ -6,33 +6,9 @@ use std::{
 };
 
 use crate::utils::hashutils::get_hash_from_file;
-use crate::utils::ioutils::{add_index, read_index, IndexEntry, IndexHeader};
-
-fn get_objects_path() -> Result<PathBuf, io::Error> {
-    let rit_dir = Path::new(".rit");
-    let objects_path = rit_dir.join("objects");
-
-    if !objects_path.exists() {
-        return Err(io::Error::new(
-            io::ErrorKind::NotFound,
-            "No .rit directory found",
-        ));
-    }
-
-    Ok(objects_path)
-}
-
-fn save_file_hash(file_hash: &String, objects_path: &PathBuf, content: &Vec<u8>) -> io::Result<()> {
-    let folder_name = &file_hash[..2];
-    let file_name = &file_hash[2..];
-
-    let path_name = Path::join(&objects_path, folder_name);
-    fs::create_dir(&path_name)?;
-
-    let final_path = Path::join(&path_name, file_name);
-
-    fs::write(final_path, &content)
-}
+use crate::utils::ioutils::{
+    add_index, get_objects_path, read_index, save_file_hash, IndexEntry, IndexHeader,
+};
 
 fn is_path_processable(path: &PathBuf) -> bool {
     if path.is_dir() {
@@ -65,11 +41,7 @@ fn get_file_path_info(path: &PathBuf) -> (String, u32) {
 /// If the required files already added, then it does nothing.
 /// Any new requested files will be added.
 pub fn add_rit(paths: Vec<&PathBuf>) -> Result<bool, Box<dyn std::error::Error>> {
-    let objects_path: PathBuf;
-    match get_objects_path() {
-        Ok(dir) => objects_path = dir,
-        Err(e) => return Err(Box::new(e)),
-    }
+    let objects_path = get_objects_path()?;
 
     let mut index_entries: Vec<IndexEntry> = vec![];
     let mut header = IndexHeader::new(0, 3, *b"DIRC");
