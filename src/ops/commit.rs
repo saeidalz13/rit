@@ -30,23 +30,25 @@ use crate::utils::{hashutils::get_hash_from_file, ioutils};
 // let paths = ies.into_iter().map(|ie| ie.file_path).collect();
 fn create_tree_file() -> Result<String, Box<dyn std::error::Error>> {
     let (_, ies) = ioutils::read_index()?;
-    let space_ascii = 32 as u8;
 
-    let mut content: Vec<u8> = vec![];
+    let space_ascii = 32 as u8;
+    let newline_ascii = 10 as u8;
+    let mut content: Vec<u8> = Vec::new();
+
     for ie in ies.iter() {
         // should be octal mode of permission
         // let mode = u8::from(&ie.mode).try_into()?;
-        content.extend(ie.mode.to_be_bytes());
+        content.extend_from_slice(&ie.mode.to_be_bytes());
         content.push(space_ascii);
 
-        content.extend(ie.file_path.as_bytes());
+        content.extend_from_slice(ie.file_path.as_bytes());
         content.push(space_ascii);
 
         let file_content = fs::read(&ie.file_path)?;
         let (_, hash_value) = get_hash_from_file(&file_content);
 
-        content.extend(hash_value);
-        content.push(10 as u8); // new line
+        content.extend_from_slice(&hash_value);
+        content.push(newline_ascii); // new line
     }
 
     let (tree_file_name, _) = get_hash_from_file(&content);
