@@ -192,10 +192,7 @@ pub fn status_rit() {
         // 1. Check if committed, No action required for these
         if check_commited {
             if let Some(h) = committed_content.get(p) {
-                println!("{:?}", *h);
-                println!("{:?}", hash_vec);
                 if *h == hash_vec {
-                    // committed.push(p.to_path_buf());
                     return;
                 }
             }
@@ -215,22 +212,37 @@ pub fn status_rit() {
         untracked.push(p.to_path_buf());
     });
 
-    println!("---------------------------");
-    println!("\u{1b}[1;31mUntracked:\u{1b}[0m");
-    println!("To add the file:\n>> rit add <PATH>...");
-    for up in untracked {
-        println!("\t\u{1b}[1;31m*\u{1b}[0m {}", up.display());
+    let mut is_everything_updated = true;
+
+    if !untracked.is_empty() {
+        is_everything_updated = false;
+        println!("---------------------------");
+        println!("\u{1b}[1;31mUntracked:\u{1b}[0m");
+        println!("To add the file:\n>> rit add <PATH>...\n");
+        for up in untracked {
+            println!("\t\u{1b}[1;31m*\u{1b}[0m {}", up.display());
+        }
     }
 
-    println!("---------------------------");
-    println!("\u{1b}[1;32mTracked:\u{1b}[0m");
-    for su in staged_uncommitted {
-        println!("\t\u{1b}[1;32m$\u{1b}[0m {}", su.display());
+    if !staged_uncommitted.is_empty() {
+        is_everything_updated = false;
+        println!("---------------------------");
+        println!("\u{1b}[1;32mTracked:\u{1b}[0m");
+        for su in staged_uncommitted {
+            println!("\t\u{1b}[1;32m$\u{1b}[0m {}", su.display());
+        }
     }
 
-    println!("---------------------------");
-    println!("\u{1b}[1;33mModified:\u{1b}[0m");
-    for mp in modifed_unstaged {
-        println!("\t\u{1b}[1;33m>\u{1b}[0m {}", mp.display());
+    if !modifed_unstaged.is_empty() {
+        is_everything_updated = false;
+        println!("---------------------------");
+        println!("\u{1b}[1;33mModified:\u{1b}[0m");
+        for mp in modifed_unstaged {
+            println!("\t\u{1b}[1;33m>\u{1b}[0m {}", mp.display());
+        }
+    }
+
+    if is_everything_updated {
+        println!("** Everything is up-to-date **")
     }
 }
