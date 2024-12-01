@@ -39,19 +39,20 @@ fn create_tree_file(objects_path: &PathBuf) -> Result<String, Box<dyn std::error
     let mut tree_content: Vec<u8> = Vec::new();
 
     for ie in ies.iter() {
-        // should be octal mode of permission
-        // let mode = u8::from(&ie.mode).try_into()?;
-        tree_content.extend_from_slice(format!("{:o}", ie.mode).as_bytes());
-        tree_content.push(ASCII_CHAR_SPACE);
-
+        // 4 bytes for mode
+        tree_content.extend_from_slice(&ie.mode.to_be_bytes());
+        // 4 bytes for file_path_len
+        tree_content.extend_from_slice(&ie.file_path_len.to_be_bytes());
+        // unknows bytes for file_path (inferred from the previous 4 bytes)
         tree_content.extend_from_slice(ie.file_path.as_bytes());
-        tree_content.push(ASCII_CHAR_SPACE);
+        // 32 bytes for sha hash
+        tree_content.extend_from_slice(&ie.sha_hash[..]);
 
-        // let file_content = fs::read(&ie.file_path)?;
-        // let (_, hash_value) = get_hash_from_file(&file_content);
-
-        tree_content.extend_from_slice(hex::encode(&ie.sha_hash).as_bytes());
-        tree_content.push(ASCII_CHAR_NEWLINE); // new line
+        // Adding extra 0 if necessary for 8-byte alignment
+        let offset = 8 - (tree_content.len() % 8);
+        if offset > 0 {
+            tree_content.extend_from_slice(&vec![0; offset]);
+        }
     }
 
     let (tree_file_name, _) = get_hash_from_file(&tree_content);
