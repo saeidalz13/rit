@@ -1,5 +1,4 @@
 use crate::utils::{hashutils::get_hash_from_file, ioutils};
-use hex;
 use std::{
     fs,
     io::Write,
@@ -30,10 +29,7 @@ use std::{
 // This approach prevents cloning the strings
 // let paths = ies.into_iter().map(|ie| ie.file_path).collect();
 
-const ASCII_CHAR_SPACE: u8 = 32;
-const ASCII_CHAR_NEWLINE: u8 = 10;
-
-fn create_tree_file(objects_path: &PathBuf) -> Result<String, Box<dyn std::error::Error>> {
+fn write_tree_file(objects_path: &PathBuf) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     let (_, ies) = ioutils::read_index()?;
 
     let mut tree_content: Vec<u8> = Vec::new();
@@ -55,56 +51,60 @@ fn create_tree_file(objects_path: &PathBuf) -> Result<String, Box<dyn std::error
         }
     }
 
-    let (tree_file_name, _) = get_hash_from_file(&tree_content);
+    let (tree_file_name, tree_file_hash) = get_hash_from_file(&tree_content);
     ioutils::save_file_hash(&tree_file_name, objects_path, &tree_content)?;
 
-    Ok(tree_file_name)
+    Ok(tree_file_hash)
 }
 
-// fn create_commit_file() {}
+fn write_commit_file(
+    objects_path: &PathBuf,
+    parent_commit_hash: Vec<u8>,
+    tree_file_hash: Vec<u8>,
+    commit_msg: &str,
+) -> Result<Vec<u8>, std::io::Error> {
+    let mut commit_content: Vec<u8> = Vec::new();
 
-pub fn commit_rit(commit_msg: &str) {
-    let objects_path = ioutils::get_objects_path().unwrap();
+    // 4 bytes
+    commit_content.extend_from_slice(b"tree");
 
-    let tree_file_name: String;
-    match create_tree_file(&objects_path) {
-        Ok(p) => tree_file_name = p,
+    // 32 bytes
+    commit_content.extend_from_slice(&tree_file_hash[..]);
 
-        Err(e) => {
-            eprintln!("{}", e);
-            return;
-        }
+    // 32 bytes if available
+    if !parent_commit_hash.is_empty() {
+        commit_content.extend_from_slice(&parent_commit_hash[..]);
     }
 
-    let mut parent_commit_hash = String::new();
-    let main_file = Path::new("./.rit/refs/heads/main");
+    // unknown number of bytes, read until 10
+    commit_content.extend_from_slice(b"author saeid saeidalz96@gmail.com\n");
+
+    // unknown number of bytes, read until 10
+    commit_content.extend_from_slice(b"committer saeid saeidalz96@gmail.com\n");
+
+    // one byte for space
+    commit_content.push(b' ');
+    // unknows bytes, read until end for msg
+    commit_content.extend_from_slice(commit_msg.as_bytes());
+
+    let (commit_file_name, commit_file_hash) = get_hash_from_file(&commit_content);
+    ioutils::save_file_hash(&commit_file_name, &objects_path, &commit_content)?;
+
+    Ok(commit_file_hash)
+}
+
+fn fetch_parent_commit_hash(main_file: &Path) -> Result<(Vec<u8>, bool), std::io::Error> {
+    let mut parent_commit_hash: Vec<u8> = Vec::new();
     let mut main_file_exists = false;
     if main_file.exists() {
-        parent_commit_hash = fs::read_to_string(main_file).unwrap();
+        parent_commit_hash = fs::read(main_file)?;
         main_file_exists = true;
     }
 
-    let mut commit_content: Vec<u8> = Vec::new();
+    Ok((parent_commit_hash, main_file_exists))
+}
 
-    commit_content.extend_from_slice(b"tree ");
-    commit_content.extend_from_slice(tree_file_name.as_bytes());
-    commit_content.push(ASCII_CHAR_NEWLINE);
-
-    if !parent_commit_hash.is_empty() {
-        commit_content.extend_from_slice(parent_commit_hash.as_bytes());
-        commit_content.push(ASCII_CHAR_NEWLINE);
-    }
-
-    // todo!("add date and permission for both author and committer");
-    commit_content.extend_from_slice(b"author saeid saeidalz96@gmail.com\n");
-    commit_content.extend_from_slice(b"committer saeid saeidalz96@gmail.com\n");
-
-    commit_content.push(ASCII_CHAR_NEWLINE);
-    commit_content.extend_from_slice(commit_msg.as_bytes());
-
-    let (commit_file_name, _) = get_hash_from_file(&commit_content);
-    ioutils::save_file_hash(&commit_file_name, &objects_path, &commit_content).unwrap();
-
+fn write_head_commit(main_file_exists: bool, main_file: &Path, commit_file_hash: Vec<u8>) {
     let mut f: fs::File;
     if main_file_exists {
         f = fs::OpenOptions::new().write(true).open(main_file).unwrap();
@@ -112,5 +112,32 @@ pub fn commit_rit(commit_msg: &str) {
         fs::create_dir_all(main_file.parent().unwrap()).unwrap();
         f = fs::File::create(main_file).unwrap();
     }
-    f.write(commit_file_name.as_bytes()).unwrap();
+    f.write(&commit_file_hash[..]).unwrap();
+}
+
+pub fn commit_rit(commit_msg: &str) {
+    let objects_path = ioutils::get_objects_path().unwrap();
+    let main_file = Path::new("./.rit/refs/heads/main");
+
+    let tree_file_hash: Vec<u8>;
+    match write_tree_file(&objects_path) {
+        Ok(p) => tree_file_hash = p,
+
+        Err(e) => {
+            eprintln!("{}", e);
+            return;
+        }
+    }
+
+    let (parent_commit_hash, main_file_exists) = fetch_parent_commit_hash(main_file).unwrap();
+
+    let commit_file_hash = write_commit_file(
+        &objects_path,
+        parent_commit_hash,
+        tree_file_hash,
+        commit_msg,
+    )
+    .unwrap();
+
+    write_head_commit(main_file_exists, main_file, commit_file_hash)
 }
