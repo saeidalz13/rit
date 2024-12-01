@@ -177,8 +177,8 @@ pub fn save_file_hash(
     objects_path: &PathBuf,
     content: &Vec<u8>,
 ) -> io::Result<()> {
-    let folder_name = &file_hash[..2];
-    let file_name = &file_hash[2..];
+    let folder_name = &file_hash[..3];
+    let file_name = &file_hash[3..];
 
     let path_name = Path::join(&objects_path, folder_name);
     fs::create_dir(&path_name)?;
