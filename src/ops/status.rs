@@ -1,7 +1,10 @@
-use crate::utils::{hashutils::get_hash_from_file, ioutils::read_index};
+use crate::utils::{
+    hashutils::get_hash_from_file,
+    ioutils::{get_objects_path, read_index, IndexEntry},
+};
 use std::{
-    fs::read,
-    fs::read_dir,
+    collections::HashMap,
+    fs::{self, read, read_dir},
     io::ErrorKind,
     path::{Path, PathBuf},
 };
@@ -52,7 +55,7 @@ fn should_ignore_or_hidden(entry: &DirEntry, ignore_list: &Vec<PathBuf>) -> bool
     should_ignore(entry, ignore_list) || is_hidden(entry)
 }
 
-fn get_rit_paths(ignore_list: Vec<PathBuf>) -> Vec<PathBuf> {
+fn get_all_paths(ignore_list: Vec<PathBuf>) -> Vec<PathBuf> {
     let root_dir = Path::new(".");
     let mut paths = vec![];
 
@@ -80,6 +83,60 @@ fn get_rit_paths(ignore_list: Vec<PathBuf>) -> Vec<PathBuf> {
     paths
 }
 
+fn retrieve_committed_content() -> Result<HashMap<PathBuf, Vec<u8>>, std::io::Error> {
+    let objects_path = get_objects_path()?;
+
+    let main_file = Path::new("./.rit/refs/heads/main");
+    let commit_hash = fs::read_to_string(main_file)?;
+
+    let commit_dir = &commit_hash[..3];
+    let commit_filename = &commit_hash[3..];
+
+    let commit_path = Path::new(&objects_path)
+        .join(commit_dir)
+        .join(commit_filename);
+
+    let commit_content = fs::read(commit_path)?;
+
+    let mut tree_hash = String::new();
+    for line in commit_content.split(|&b| b == b'\n') {
+        if let Ok(line_str) = std::str::from_utf8(line) {
+            if let Some(th) = line_str.split(' ').nth(1) {
+                tree_hash = th.to_string();
+                break;
+            }
+        }
+    }
+    if tree_hash.is_empty() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "unable to find tree hash in commit file",
+        ));
+    }
+
+    let tree_dir = &tree_hash[..3];
+    let tree_filename = &tree_hash[3..];
+
+    let tree_path = Path::new(&objects_path).join(tree_dir).join(tree_filename);
+
+    let tree_content = fs::read(tree_path)?;
+
+    let mut committed_content: HashMap<PathBuf, Vec<u8>> = HashMap::new();
+    for line in tree_content.split(|&b| b == b'\n') {
+        if let Ok(line_str) = std::str::from_utf8(line) {
+            // part 1 permission, part 2 path, part 3 hash
+            // for every line of the tree file
+            let parts: Vec<&str> = line_str.split(' ').collect();
+
+            if let (Some(h), Some(s)) = (parts.get(1), parts.get(2)) {
+                committed_content.insert(PathBuf::from(*h), hex::decode(s).unwrap());
+            }
+        }
+    }
+
+    Ok(committed_content)
+}
+
 /// To check the status, we need to consider serveral factors
 /// 1. Fetch all paths in current dir excluding .gitignore
 /// 2. Check the INDEX to see what's been added
@@ -92,65 +149,88 @@ pub fn status_rit() {
         return;
     }
 
-    let rit_paths = get_rit_paths(get_ignore_list());
+    let all_paths = get_all_paths(get_ignore_list());
 
-    let mut untracked_paths: Vec<PathBuf> = vec![];
-    let mut tracked_paths: Vec<PathBuf> = vec![];
-    let mut modified_paths = vec![];
-
-    match read_index() {
-        Ok((_, ies)) => {
-            'outer_loop: for rp in rit_paths.iter() {
-                if let Some(rp_str) = rp.to_str() {
-                    for ie in ies.iter() {
-                        if rp_str == ie.file_path {
-                            // TODO:
-                            // Add hashing the file content to check
-                            // if the file has been modified
-                            let content = read(Path::new(rp_str)).unwrap();
-                            let (_, hash_vec) = get_hash_from_file(&content);
-
-                            if hash_vec != ie.sha_hash {
-                                modified_paths.push(rp.to_path_buf());
-                            } else {
-                                tracked_paths.push(rp.to_path_buf());
-                            }
-
-                            continue 'outer_loop;
-                        }
-                    }
-                }
-                untracked_paths.push(rp.to_path_buf());
+    let committed_content;
+    let mut check_commited = true;
+    match retrieve_committed_content() {
+        Ok(cc) => committed_content = cc,
+        Err(e) => {
+            eprintln!("Error reading committed content: {}", e);
+            if e.kind() != ErrorKind::NotFound {
+                return;
+            } else {
+                committed_content = HashMap::new();
+                check_commited = false;
             }
         }
+    }
+
+    let mut untracked: Vec<PathBuf> = Vec::new();
+    let mut modifed_unstaged: Vec<PathBuf> = Vec::new();
+    let mut staged_uncommitted: Vec<PathBuf> = Vec::new();
+    // let mut committed: Vec<PathBuf> = Vec::new();
+    // let mut deleted = Vec::new();
+
+    let mut index_entries: HashMap<PathBuf, IndexEntry> = HashMap::new();
+    match read_index() {
+        Ok((_, ies)) => ies.into_iter().for_each(|ie| {
+            index_entries.insert(PathBuf::from(&ie.file_path), ie);
+        }),
         Err(e) => {
-            if e.kind() == ErrorKind::NotFound {
-                for rp in rit_paths.into_iter() {
-                    untracked_paths.push(rp);
-                }
-            } else {
+            if e.kind() != ErrorKind::NotFound {
                 eprintln!("{}", e);
                 return;
             }
         }
     }
 
+    all_paths.iter().for_each(|p| {
+        let content = read(p).unwrap();
+        let (_, hash_vec) = get_hash_from_file(&content);
+
+        // 1. Check if committed, No action required for these
+        if check_commited {
+            if let Some(h) = committed_content.get(p) {
+                println!("{:?}", *h);
+                println!("{:?}", hash_vec);
+                if *h == hash_vec {
+                    // committed.push(p.to_path_buf());
+                    return;
+                }
+            }
+        }
+
+        // 2 & 3. Check if staged modified or uncommitted
+        if let Some(entry) = index_entries.get(p) {
+            if hash_vec != entry.sha_hash {
+                modifed_unstaged.push(p.to_path_buf())
+            } else {
+                staged_uncommitted.push(p.to_path_buf());
+            }
+            return;
+        }
+
+        // 4. Collect untracked
+        untracked.push(p.to_path_buf());
+    });
+
     println!("---------------------------");
     println!("\u{1b}[1;31mUntracked:\u{1b}[0m");
     println!("To add the file:\n>> rit add <PATH>...");
-    for up in untracked_paths {
+    for up in untracked {
         println!("\t\u{1b}[1;31m*\u{1b}[0m {}", up.display());
     }
 
     println!("---------------------------");
     println!("\u{1b}[1;32mTracked:\u{1b}[0m");
-    for tp in tracked_paths {
-        println!("\t\u{1b}[1;32m$\u{1b}[0m {}", tp.display());
+    for su in staged_uncommitted {
+        println!("\t\u{1b}[1;32m$\u{1b}[0m {}", su.display());
     }
 
     println!("---------------------------");
     println!("\u{1b}[1;33mModified:\u{1b}[0m");
-    for mp in modified_paths {
+    for mp in modifed_unstaged {
         println!("\t\u{1b}[1;33m>\u{1b}[0m {}", mp.display());
     }
 }
