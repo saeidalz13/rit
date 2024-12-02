@@ -129,7 +129,6 @@ fn retrieve_committed_content() -> io::Result<HashMap<PathBuf, Vec<u8>>> {
 
         let file_hash = &tree_content[pos..pos + 32];
         pos += 32;
-        dbg!("Tree File Line: {} | {}", &file_path, &file_hash);
         committed_content.insert(PathBuf::from(file_path.into_owned()), file_hash.to_owned());
 
         pos = (pos + 7) & !7;
