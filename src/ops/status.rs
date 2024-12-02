@@ -101,9 +101,8 @@ fn retrieve_committed_content() -> io::Result<HashMap<PathBuf, Vec<u8>>> {
 
     let commit_content = fs::read(commit_path)?;
 
-    // first 4 bytes is b"tree" and the rest 32 are the
     // hashed version of SHA256, hence 32 bytes
-    let tree_hash = hex::encode(&commit_content[4..4 + 32]);
+    let tree_hash = hex::encode(&commit_content[..32]);
     if tree_hash.is_empty() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
