@@ -1,6 +1,6 @@
 use crate::utils::{hashutils::get_hash_from_file, ioutils};
 use std::{
-    fs,
+    fs, io,
     io::Write,
     path::{Path, PathBuf},
 };
@@ -29,7 +29,7 @@ use std::{
 // This approach prevents cloning the strings
 // let paths = ies.into_iter().map(|ie| ie.file_path).collect();
 
-fn write_tree_file(objects_path: &PathBuf) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+fn write_tree_file(objects_path: &PathBuf) -> io::Result<Vec<u8>> {
     let (_, ies) = ioutils::read_index()?;
 
     let mut tree_content: Vec<u8> = Vec::new();
@@ -45,9 +45,10 @@ fn write_tree_file(objects_path: &PathBuf) -> Result<Vec<u8>, Box<dyn std::error
         tree_content.extend_from_slice(&ie.sha_hash[..]);
 
         // Adding extra 0 if necessary for 8-byte alignment
-        let offset = 8 - (tree_content.len() % 8);
+        let offset = tree_content.len() % 8;
         if offset > 0 {
-            tree_content.extend_from_slice(&vec![0; offset]);
+            let padding = 8 - offset;
+            tree_content.extend_from_slice(&vec![0; padding]);
         }
     }
 
@@ -62,7 +63,7 @@ fn write_commit_file(
     parent_commit_hash: Vec<u8>,
     tree_file_hash: Vec<u8>,
     commit_msg: &str,
-) -> Result<Vec<u8>, std::io::Error> {
+) -> io::Result<String> {
     let mut commit_content: Vec<u8> = Vec::new();
 
     // 4 bytes
@@ -87,13 +88,13 @@ fn write_commit_file(
     // unknows bytes, read until end for msg
     commit_content.extend_from_slice(commit_msg.as_bytes());
 
-    let (commit_file_name, commit_file_hash) = get_hash_from_file(&commit_content);
+    let (commit_file_name, _) = get_hash_from_file(&commit_content);
     ioutils::save_file_hash(&commit_file_name, &objects_path, &commit_content)?;
 
-    Ok(commit_file_hash)
+    Ok(commit_file_name)
 }
 
-fn fetch_parent_commit_hash(main_file: &Path) -> Result<(Vec<u8>, bool), std::io::Error> {
+fn fetch_parent_commit_hash(main_file: &Path) -> io::Result<(Vec<u8>, bool)> {
     let mut parent_commit_hash: Vec<u8> = Vec::new();
     let mut main_file_exists = false;
     if main_file.exists() {
@@ -104,7 +105,7 @@ fn fetch_parent_commit_hash(main_file: &Path) -> Result<(Vec<u8>, bool), std::io
     Ok((parent_commit_hash, main_file_exists))
 }
 
-fn write_head_commit(main_file_exists: bool, main_file: &Path, commit_file_hash: Vec<u8>) {
+fn write_head_commit(main_file_exists: bool, main_file: &Path, commit_file_name: String) {
     let mut f: fs::File;
     if main_file_exists {
         f = fs::OpenOptions::new().write(true).open(main_file).unwrap();
@@ -112,7 +113,7 @@ fn write_head_commit(main_file_exists: bool, main_file: &Path, commit_file_hash:
         fs::create_dir_all(main_file.parent().unwrap()).unwrap();
         f = fs::File::create(main_file).unwrap();
     }
-    f.write(&commit_file_hash[..]).unwrap();
+    f.write(commit_file_name.as_bytes()).unwrap();
 }
 
 pub fn commit_rit(commit_msg: &str) {
@@ -131,7 +132,7 @@ pub fn commit_rit(commit_msg: &str) {
 
     let (parent_commit_hash, main_file_exists) = fetch_parent_commit_hash(main_file).unwrap();
 
-    let commit_file_hash = write_commit_file(
+    let commit_file_name = write_commit_file(
         &objects_path,
         parent_commit_hash,
         tree_file_hash,
@@ -139,5 +140,5 @@ pub fn commit_rit(commit_msg: &str) {
     )
     .unwrap();
 
-    write_head_commit(main_file_exists, main_file, commit_file_hash)
+    write_head_commit(main_file_exists, main_file, commit_file_name)
 }
