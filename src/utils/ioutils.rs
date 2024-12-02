@@ -61,8 +61,15 @@ fn extract_header(b: &Vec<u8>) -> io::Result<IndexHeader> {
         ));
     }
 
-    let version = u32::from_be_bytes(b[4..8].try_into().unwrap());
-    let num_entries = u32::from_be_bytes(b[8..12].try_into().unwrap());
+    let version_bytes: [u8; 4] = b[4..8]
+        .try_into()
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+    let version = u32::from_be_bytes(version_bytes);
+
+    let num_entires_byte: [u8; 4] = b[8..12]
+        .try_into()
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+    let num_entries = u32::from_be_bytes(num_entires_byte);
 
     Ok(IndexHeader {
         num_entries,
@@ -121,14 +128,17 @@ pub fn read_index() -> io::Result<(IndexHeader, Vec<IndexEntry>)> {
         entries.push(ie);
 
         // Align to 8-byte boundary
-        // offset = pos + 1;
+        // "!7" is an integer mask that clears the last 3 bits
+        // of a number when combined with a bitwise AND. It's
+        // NOTing the 7.
+        // The last 3 bits represent remainders modulo 8.
         offset = (pos + 7) & !7;
     }
 
     Ok((header, entries))
 }
 
-pub fn add_index(index_header: IndexHeader, index_entries: Vec<IndexEntry>) -> io::Result<bool> {
+pub fn write_index(index_header: IndexHeader, index_entries: Vec<IndexEntry>) -> io::Result<bool> {
     let index_path = Path::new("./.rit/INDEX");
     let mut f = if index_path.exists() {
         fs::OpenOptions::new()
@@ -142,30 +152,35 @@ pub fn add_index(index_header: IndexHeader, index_entries: Vec<IndexEntry>) -> i
 
     // Check if file is empty, write header
     // if f.metadata().unwrap().len() == 0 {}
-    let mut pos = 0 as usize;
-    pos += f.write(&index_header.signature())?;
-    pos += f.write(&index_header.version().to_be_bytes())?;
-    pos += f.write(&index_header.num_entries().to_be_bytes())?;
+    f.write(&index_header.signature())?;
+    f.write(&index_header.version().to_be_bytes())?;
+    f.write(&index_header.num_entries().to_be_bytes())?;
 
-    // Index
+    // header is always 3 * 4 bytes
+    let mut pos = 12 as usize;
+    // 9 * 4 + 32  bytes
+    let bytes_until_file_path = 68 as usize;
+
     for ie in index_entries {
-        pos += f.write(&ie.ctime.0.to_be_bytes())?;
-        pos += f.write(&ie.ctime.1.to_be_bytes())?;
-        pos += f.write(&ie.mtime.0.to_be_bytes())?;
-        pos += f.write(&ie.mtime.1.to_be_bytes())?;
-        pos += f.write(&ie.device.to_be_bytes())?;
-        pos += f.write(&ie.inode.to_be_bytes())?;
-        pos += f.write(&ie.mode.to_be_bytes())?;
-        pos += f.write(&ie.size.to_be_bytes())?;
-        pos += f.write(&ie.sha_hash[..])?;
-        pos += f.write(&ie.file_path_len.to_be_bytes())?;
+        f.write(&ie.ctime.0.to_be_bytes())?;
+        f.write(&ie.ctime.1.to_be_bytes())?;
+        f.write(&ie.mtime.0.to_be_bytes())?;
+        f.write(&ie.mtime.1.to_be_bytes())?;
+        f.write(&ie.device.to_be_bytes())?;
+        f.write(&ie.inode.to_be_bytes())?;
+        f.write(&ie.mode.to_be_bytes())?;
+        f.write(&ie.size.to_be_bytes())?;
+        f.write(&ie.sha_hash[..])?;
+        f.write(&ie.file_path_len.to_be_bytes())?;
+
+        pos += bytes_until_file_path;
         pos += f.write(&ie.file_path.as_bytes())?;
 
-        // TODO: Add 8-byte alignment padding
-        let alignment_offset = (8 - (pos % 8)) % 8;
-        if alignment_offset > 0 {
-            f.write_all(&vec![0; alignment_offset])?;
-            pos += alignment_offset;
+        let offset = pos % 8;
+        if offset > 0 {
+            let padding = 8 - offset;
+            f.write_all(&vec![0; padding])?;
+            pos += padding;
         }
     }
 

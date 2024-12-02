@@ -7,7 +7,7 @@ use std::{
 
 use crate::utils::hashutils::get_hash_from_file;
 use crate::utils::ioutils::{
-    add_index, get_objects_path, read_index, save_file_hash, IndexEntry, IndexHeader,
+    get_objects_path, read_index, save_file_hash, write_index, IndexEntry, IndexHeader,
 };
 
 fn is_path_processable(path: &PathBuf) -> bool {
@@ -113,7 +113,7 @@ pub fn add_rit(paths: Vec<&PathBuf>) -> Result<bool, Box<dyn std::error::Error>>
     }
 
     if success > 0 {
-        add_index(header, index_entries)?;
+        write_index(header, index_entries)?;
     }
 
     if success != all_paths_len {

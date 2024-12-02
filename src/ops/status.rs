@@ -5,7 +5,7 @@ use crate::utils::{
 use std::{
     collections::HashMap,
     fs::{self, read, read_dir},
-    io::ErrorKind,
+    io,
     path::{Path, PathBuf},
 };
 use walkdir::{DirEntry, WalkDir};
@@ -83,30 +83,26 @@ fn get_all_paths(ignore_list: Vec<PathBuf>) -> Vec<PathBuf> {
     paths
 }
 
-fn retrieve_committed_content() -> Result<HashMap<PathBuf, Vec<u8>>, std::io::Error> {
-    let objects_path = get_objects_path()?;
-
+fn get_head_commit_path(objects_path: &Path) -> io::Result<PathBuf> {
     let main_file = Path::new("./.rit/refs/heads/main");
     let commit_hash = fs::read_to_string(main_file)?;
 
     let commit_dir = &commit_hash[..3];
     let commit_filename = &commit_hash[3..];
 
-    let commit_path = Path::new(&objects_path)
+    Ok(Path::new(&objects_path)
         .join(commit_dir)
-        .join(commit_filename);
+        .join(commit_filename))
+}
+
+fn retrieve_committed_content() -> io::Result<HashMap<PathBuf, Vec<u8>>> {
+    let objects_path = get_objects_path()?;
+    let commit_path = get_head_commit_path(&objects_path)?;
 
     let commit_content = fs::read(commit_path)?;
 
-    let mut tree_hash = String::new();
-    for line in commit_content.split(|&b| b == b'\n') {
-        if let Ok(line_str) = std::str::from_utf8(line) {
-            if let Some(th) = line_str.split(' ').nth(1) {
-                tree_hash = th.to_string();
-                break;
-            }
-        }
-    }
+    // hashed version of SHA256, hence 32 bytes
+    let tree_hash = hex::encode(&commit_content[..32]);
     if tree_hash.is_empty() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
@@ -114,24 +110,27 @@ fn retrieve_committed_content() -> Result<HashMap<PathBuf, Vec<u8>>, std::io::Er
         ));
     }
 
-    let tree_dir = &tree_hash[..3];
-    let tree_filename = &tree_hash[3..];
-
-    let tree_path = Path::new(&objects_path).join(tree_dir).join(tree_filename);
-
+    let tree_path = Path::new(&objects_path)
+        .join(&tree_hash[..3])
+        .join(&tree_hash[3..]);
     let tree_content = fs::read(tree_path)?;
 
     let mut committed_content: HashMap<PathBuf, Vec<u8>> = HashMap::new();
-    for line in tree_content.split(|&b| b == b'\n') {
-        if let Ok(line_str) = std::str::from_utf8(line) {
-            // part 1 permission, part 2 path, part 3 hash
-            // for every line of the tree file
-            let parts: Vec<&str> = line_str.split(' ').collect();
+    let mut pos: usize = 0;
+    while pos < tree_content.len() - 1 {
+        // let mode = &tree_content[pos..pos+4];
+        let file_path_len_bytes: [u8; 4] = tree_content[pos + 4..pos + 8]
+            .try_into()
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        let file_path_len = u32::from_be_bytes(file_path_len_bytes) as usize;
+        let file_path = String::from_utf8_lossy(&tree_content[pos + 8..8 + pos + file_path_len]);
+        pos = 8 + pos + file_path_len;
 
-            if let (Some(h), Some(s)) = (parts.get(1), parts.get(2)) {
-                committed_content.insert(PathBuf::from(*h), hex::decode(s).unwrap());
-            }
-        }
+        let file_hash = &tree_content[pos..pos + 32];
+        pos += 32;
+        committed_content.insert(PathBuf::from(file_path.into_owned()), file_hash.to_owned());
+
+        pos = (pos + 7) & !7;
     }
 
     Ok(committed_content)
@@ -157,7 +156,7 @@ pub fn status_rit() {
         Ok(cc) => committed_content = cc,
         Err(e) => {
             eprintln!("Error reading committed content: {}", e);
-            if e.kind() != ErrorKind::NotFound {
+            if e.kind() != io::ErrorKind::NotFound {
                 return;
             } else {
                 committed_content = HashMap::new();
@@ -178,7 +177,7 @@ pub fn status_rit() {
             index_entries.insert(PathBuf::from(&ie.file_path), ie);
         }),
         Err(e) => {
-            if e.kind() != ErrorKind::NotFound {
+            if e.kind() != io::ErrorKind::NotFound {
                 eprintln!("{}", e);
                 return;
             }
