@@ -1,16 +1,13 @@
-use crate::utils::{
-    hashutils::get_hash_from_file,
-    ioutils::{get_objects_path, read_index, IndexEntry},
+use crate::{
+    models::indexmodels::IndexEntry,
+    utils::{hashutils::get_hash_from_file, ioutils},
 };
 use std::{
     collections::HashMap,
-    fs::{self, read, read_dir},
+    fs::{self, read},
     io,
     path::{Path, PathBuf},
 };
-use walkdir::{DirEntry, WalkDir};
-
-const IGNORED_PATHS: &[&str] = &[".", ".ritignore"];
 
 fn get_ignore_list() -> Vec<PathBuf> {
     let mut ignore_list: Vec<PathBuf> = vec![];
@@ -28,61 +25,6 @@ fn get_ignore_list() -> Vec<PathBuf> {
     ignore_list
 }
 
-fn should_ignore(e: &DirEntry, ignore_list: &Vec<PathBuf>) -> bool {
-    if let Some(name) = e.file_name().to_str() {
-        ignore_list
-            .iter()
-            .any(|term| name.contains(term.to_str().unwrap_or("")))
-    } else {
-        false
-    }
-}
-
-fn is_hidden(entry: &DirEntry) -> bool {
-    entry
-        .file_name()
-        .to_str()
-        .map(|s| s.starts_with("."))
-        .unwrap_or(false)
-}
-
-fn should_ignore_or_hidden(entry: &DirEntry, ignore_list: &Vec<PathBuf>) -> bool {
-    if let Some(path_str) = entry.path().to_str() {
-        if IGNORED_PATHS.contains(&path_str) {
-            return false;
-        }
-    }
-    should_ignore(entry, ignore_list) || is_hidden(entry)
-}
-
-fn get_all_paths(ignore_list: Vec<PathBuf>) -> Vec<PathBuf> {
-    let root_dir = Path::new(".");
-    let mut paths = vec![];
-
-    // search for files in "."
-    if let Ok(entries) = read_dir(root_dir) {
-        for e in entries.filter_map(|e| e.ok()) {
-            if e.path().is_file() {
-                paths.push(e.path());
-            }
-        }
-    }
-
-    // search all subdirs
-    for entry in WalkDir::new(root_dir)
-        .into_iter()
-        .filter_entry(|e| !should_ignore_or_hidden(e, &ignore_list))
-        // skip the non-permitted dirs
-        .filter_map(|e| e.ok())
-    {
-        if !entry.path().is_dir() {
-            paths.push(entry.into_path());
-        }
-    }
-
-    paths
-}
-
 fn get_head_commit_path(objects_path: &Path) -> io::Result<PathBuf> {
     let main_file = Path::new("./.rit/refs/heads/main");
     let commit_hash = fs::read_to_string(main_file)?;
@@ -96,7 +38,7 @@ fn get_head_commit_path(objects_path: &Path) -> io::Result<PathBuf> {
 }
 
 fn retrieve_committed_content() -> io::Result<HashMap<PathBuf, Vec<u8>>> {
-    let objects_path = get_objects_path()?;
+    let objects_path = ioutils::get_objects_path()?;
     let commit_path = get_head_commit_path(&objects_path)?;
 
     let commit_content = fs::read(commit_path)?;
@@ -148,7 +90,7 @@ pub fn status_rit() {
         return;
     }
 
-    let all_paths = get_all_paths(get_ignore_list());
+    let all_paths = ioutils::get_all_paths(get_ignore_list());
 
     let committed_content;
     let mut check_commited = true;
@@ -172,7 +114,7 @@ pub fn status_rit() {
     // let mut deleted = Vec::new();
 
     let mut index_entries: HashMap<PathBuf, IndexEntry> = HashMap::new();
-    match read_index() {
+    match ioutils::read_index() {
         Ok((_, ies)) => ies.into_iter().for_each(|ie| {
             index_entries.insert(PathBuf::from(&ie.file_path), ie);
         }),

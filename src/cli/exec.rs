@@ -9,13 +9,17 @@ pub fn exec_cli() {
 
     match matches.subcommand() {
         Some(("add", sub_matches)) => {
+            let mut add_all = false;
+            if let Some(a) = sub_matches.get_one::<bool>("all") {
+                add_all = *a
+            }
             let paths = sub_matches
                 .get_many::<PathBuf>("PATH")
                 .into_iter()
                 .flatten()
                 .collect::<Vec<_>>();
 
-            match add_rit(paths) {
+            match add_rit(paths, add_all) {
                 Ok(_) => println!("files added"),
                 Err(e) => eprintln!("{}", e.to_string()),
             };

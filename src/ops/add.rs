@@ -5,10 +5,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crate::models::indexmodels::{IndexEntry, IndexHeader};
 use crate::utils::hashutils::get_hash_from_file;
-use crate::utils::ioutils::{
-    get_objects_path, read_index, save_file_hash, write_index, IndexEntry, IndexHeader,
-};
+use crate::utils::ioutils::{get_objects_path, read_index, save_file_hash, write_index};
 
 fn is_path_processable(path: &PathBuf) -> bool {
     if path.is_dir() {
@@ -40,7 +39,7 @@ fn get_file_path_info(path: &PathBuf) -> (String, u32) {
 /// First it checks what files exist if .rit/INDEX exists.
 /// If the required files already added, then it does nothing.
 /// Any new requested files will be added.
-pub fn add_rit(paths: Vec<&PathBuf>) -> Result<bool, Box<dyn std::error::Error>> {
+pub fn add_rit(paths: Vec<&PathBuf>, add_all: bool) -> Result<bool, Box<dyn std::error::Error>> {
     let objects_path = get_objects_path()?;
 
     let mut index_entries: Vec<IndexEntry> = vec![];

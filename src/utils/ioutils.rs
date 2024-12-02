@@ -1,56 +1,11 @@
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
 use std::{fs, path::Path};
+use walkdir::{DirEntry, WalkDir};
 
-#[derive(Debug)]
-pub struct IndexHeader {
-    num_entries: u32,   // 3
-    version: u32,       // 2
-    signature: [u8; 4], // 1
-}
+use crate::models::indexmodels::{IndexEntry, IndexHeader};
 
-impl IndexHeader {
-    pub fn new(num_entries: u32, version: u32, signature: [u8; 4]) -> Self {
-        Self {
-            num_entries,
-            version,
-            signature,
-        }
-    }
-
-    pub fn num_entries(&self) -> u32 {
-        self.num_entries
-    }
-
-    pub fn set_num_entries(&mut self, num: u32) {
-        self.num_entries = num;
-    }
-
-    pub fn increment_num_entries(&mut self) {
-        self.num_entries += 1;
-    }
-
-    pub fn version(&self) -> u32 {
-        self.version
-    }
-
-    pub fn signature(&self) -> [u8; 4] {
-        self.signature
-    }
-}
-
-#[derive(Debug)]
-pub struct IndexEntry {
-    pub ctime: (u32, u32), // when file's metadata was last changed (seconds and nanoseconds)
-    pub mtime: (u32, u32), // when file's content was last modified (seconds and nanoseconds)
-    pub device: u32,
-    pub inode: u32,
-    pub mode: u32,
-    pub size: u32,
-    pub sha_hash: Vec<u8>, // SHA 256
-    pub file_path_len: u32,
-    pub file_path: String, // Relative path of file from root, stored as null-terminated str
-}
+const IGNORED_PATHS: &[&str] = &[".", ".ritignore"];
 
 fn extract_header(b: &Vec<u8>) -> io::Result<IndexHeader> {
     // first 4 bytes are the signature
@@ -71,11 +26,7 @@ fn extract_header(b: &Vec<u8>) -> io::Result<IndexHeader> {
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
     let num_entries = u32::from_be_bytes(num_entires_byte);
 
-    Ok(IndexHeader {
-        num_entries,
-        version,
-        signature: *b"DIRC",
-    })
+    Ok(IndexHeader::new(num_entries, version, *b"DIRC"))
 }
 
 fn create_index_entry_from_bytes(buffer: &Vec<u8>, offset: usize) -> (IndexEntry, usize) {
@@ -123,7 +74,7 @@ pub fn read_index() -> io::Result<(IndexHeader, Vec<IndexEntry>)> {
     let mut entries = vec![];
     let mut offset = 12;
 
-    for _ in 0..header.num_entries {
+    for _ in 0..header.num_entries() {
         let (ie, pos) = create_index_entry_from_bytes(&buffer, offset);
         entries.push(ie);
 
@@ -215,4 +166,59 @@ pub fn get_objects_path() -> Result<PathBuf, io::Error> {
     }
 
     Ok(objects_path)
+}
+
+fn is_hidden(entry: &DirEntry) -> bool {
+    entry
+        .file_name()
+        .to_str()
+        .map(|s| s.starts_with("."))
+        .unwrap_or(false)
+}
+
+fn should_ignore(e: &DirEntry, ignore_list: &Vec<PathBuf>) -> bool {
+    if let Some(name) = e.file_name().to_str() {
+        ignore_list
+            .iter()
+            .any(|term| name.contains(term.to_str().unwrap_or("")))
+    } else {
+        false
+    }
+}
+
+fn should_ignore_or_hidden(entry: &DirEntry, ignore_list: &Vec<PathBuf>) -> bool {
+    if let Some(path_str) = entry.path().to_str() {
+        if IGNORED_PATHS.contains(&path_str) {
+            return false;
+        }
+    }
+    should_ignore(entry, ignore_list) || is_hidden(entry)
+}
+
+pub fn get_all_paths(ignore_list: Vec<PathBuf>) -> Vec<PathBuf> {
+    let root_dir = Path::new(".");
+    let mut paths = vec![];
+
+    // search for files in "."
+    if let Ok(entries) = std::fs::read_dir(root_dir) {
+        for e in entries.filter_map(|e| e.ok()) {
+            if e.path().is_file() {
+                paths.push(e.path());
+            }
+        }
+    }
+
+    // search all subdirs
+    for entry in WalkDir::new(root_dir)
+        .into_iter()
+        .filter_entry(|e| !should_ignore_or_hidden(e, &ignore_list))
+        // skip the non-permitted dirs
+        .filter_map(|e| e.ok())
+    {
+        if !entry.path().is_dir() {
+            paths.push(entry.into_path());
+        }
+    }
+
+    paths
 }
