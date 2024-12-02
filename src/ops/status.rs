@@ -9,22 +9,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-fn get_ignore_list() -> Vec<PathBuf> {
-    let mut ignore_list: Vec<PathBuf> = vec![];
-
-    // Add entries from .ritignore file
-    match std::fs::read_to_string(".ritignore") {
-        Ok(res) => {
-            for line in res.lines() {
-                ignore_list.push(PathBuf::from(line));
-            }
-        }
-        Err(e) => eprintln!("{}", e),
-    }
-
-    ignore_list
-}
-
 fn get_head_commit_path(objects_path: &Path) -> io::Result<PathBuf> {
     let main_file = Path::new("./.rit/refs/heads/main");
     let commit_hash = fs::read_to_string(main_file)?;
@@ -90,7 +74,7 @@ pub fn status_rit() {
         return;
     }
 
-    let all_paths = ioutils::get_all_paths(get_ignore_list());
+    let all_paths = ioutils::get_all_paths();
 
     let committed_content;
     let mut check_commited = true;
@@ -110,7 +94,6 @@ pub fn status_rit() {
     let mut untracked: Vec<PathBuf> = Vec::new();
     let mut modifed_unstaged: Vec<PathBuf> = Vec::new();
     let mut staged_uncommitted: Vec<PathBuf> = Vec::new();
-    // let mut committed: Vec<PathBuf> = Vec::new();
     // let mut deleted = Vec::new();
 
     let mut index_entries: HashMap<PathBuf, IndexEntry> = HashMap::new();

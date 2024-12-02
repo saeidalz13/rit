@@ -195,7 +195,26 @@ fn should_ignore_or_hidden(entry: &DirEntry, ignore_list: &Vec<PathBuf>) -> bool
     should_ignore(entry, ignore_list) || is_hidden(entry)
 }
 
-pub fn get_all_paths(ignore_list: Vec<PathBuf>) -> Vec<PathBuf> {
+fn get_ignore_list() -> Vec<PathBuf> {
+    let mut ignore_list: Vec<PathBuf> = vec![];
+
+    // TODO: take into account that .ritignore might not exist
+    // Add entries from .ritignore file
+    match std::fs::read_to_string(".ritignore") {
+        Ok(res) => {
+            for line in res.lines() {
+                ignore_list.push(PathBuf::from(line));
+            }
+        }
+        Err(e) => eprintln!("{}", e),
+    }
+
+    ignore_list
+}
+
+pub fn get_all_paths() -> Vec<PathBuf> {
+    let ignore_list = get_ignore_list();
+
     let root_dir = Path::new(".");
     let mut paths = vec![];
 

@@ -12,7 +12,11 @@ pub fn get_commands() -> Command {
             Command::new("add")
                 .about("add files to rit memory")
                 .arg_required_else_help(true)
-                .arg(arg!(<PATH>..."paths to add").value_parser(value_parser!(PathBuf)))
+                .arg(
+                    arg!(<PATH>..."paths to add")
+                        .value_parser(value_parser!(PathBuf))
+                        .required(false),
+                )
                 .arg(
                     Arg::new("all")
                         .short('a')
