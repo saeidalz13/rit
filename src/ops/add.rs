@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::io::{self, ErrorKind};
 use std::os::unix::fs::MetadataExt;
 use std::{
@@ -7,7 +8,9 @@ use std::{
 
 use crate::models::indexmodels::{IndexEntry, IndexHeader};
 use crate::utils::hashutils::get_hash_from_file;
-use crate::utils::ioutils::{get_objects_path, read_index, save_file_hash, write_index};
+use crate::utils::ioutils::{
+    delete_file_hash, get_objects_path, read_index, save_file_hash, write_index,
+};
 
 fn is_path_processable(path: &PathBuf) -> bool {
     if path.is_dir() {
@@ -42,15 +45,15 @@ pub fn add_rit(paths: Vec<PathBuf>) -> Result<bool, Box<dyn std::error::Error>> 
 
     let mut index_entries: Vec<IndexEntry> = vec![];
     let mut header = IndexHeader::new(0, 3, *b"DIRC");
-    let mut existing_paths = vec![];
+    let mut existing_files: HashMap<String, (usize, Vec<u8>)> = HashMap::new();
     match read_index() {
         Ok(res) => {
             header = res.0;
             index_entries = res.1;
 
-            for ie in &index_entries {
-                existing_paths.push(ie.file_path.clone());
-            }
+            index_entries.iter().enumerate().for_each(|(idx, ie)| {
+                existing_files.insert(ie.file_path.clone(), (idx, ie.sha_hash.clone()));
+            });
         }
         Err(e) => {
             if e.kind() != ErrorKind::NotFound {
@@ -67,15 +70,29 @@ pub fn add_rit(paths: Vec<PathBuf>) -> Result<bool, Box<dyn std::error::Error>> 
         }
 
         let (file_path, file_path_len) = get_file_path_info(path);
-
-        if existing_paths.contains(&file_path) {
-            header.increment_num_entries();
-            println!("this file already added.");
-            continue;
-        }
-
+        //
         let content = fs::read(path)?;
         let (file_hash, hash_vec) = get_hash_from_file(&content);
+
+        if let Some(info) = existing_files.get(&file_path) {
+            match *info.1 == hash_vec {
+                // No change in the file
+                true => {
+                    header.increment_num_entries();
+                    println!("this file already added.");
+                    continue;
+                }
+                // Means file has been modified, removing it
+                // from the existing items to be added again
+                // with a new hash
+                false => {
+                    let file_hash = hex::encode(info.1.clone());
+                    delete_file_hash(&objects_path, &file_hash)?;
+                    index_entries.remove(info.0);
+                    header.decrement_num_entries();
+                }
+            }
+        }
 
         match save_file_hash(&file_hash, &objects_path, &content) {
             Ok(_) => {}
@@ -88,14 +105,13 @@ pub fn add_rit(paths: Vec<PathBuf>) -> Result<bool, Box<dyn std::error::Error>> 
             }
         }
 
-        let md;
-        match fs::metadata(path) {
-            Ok(m) => md = m,
+        let md = match fs::metadata(path) {
+            Ok(m) => m,
             Err(e) => {
                 println!("reading metadata error: {}", e);
                 continue;
             }
-        }
+        };
 
         index_entries.push(IndexEntry {
             ctime: (md.ctime() as u32, md.ctime_nsec() as u32),

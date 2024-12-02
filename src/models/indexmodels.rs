@@ -26,6 +26,10 @@ impl IndexHeader {
         self.num_entries += 1;
     }
 
+    pub fn decrement_num_entries(&mut self) {
+        self.num_entries -= 1;
+    }
+
     pub fn version(&self) -> u32 {
         self.version
     }

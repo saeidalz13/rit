@@ -81,8 +81,8 @@ pub fn status_rit() {
     match retrieve_committed_content() {
         Ok(cc) => committed_content = cc,
         Err(e) => {
-            eprintln!("Error reading committed content: {}", e);
             if e.kind() != io::ErrorKind::NotFound {
+                eprintln!("Error reading committed content: {}", e);
                 return;
             } else {
                 committed_content = HashMap::new();

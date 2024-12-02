@@ -146,12 +146,26 @@ pub fn save_file_hash(
     let folder_name = &file_hash[..3];
     let file_name = &file_hash[3..];
 
-    let path_name = Path::join(&objects_path, folder_name);
+    let path_name = Path::join(objects_path, folder_name);
     fs::create_dir(&path_name)?;
 
     let final_path = Path::join(&path_name, file_name);
 
-    fs::write(final_path, &content)
+    fs::write(final_path, content)
+}
+
+/// Possible Errors:
+/// - Path points to a directory.
+/// - The file doesn’t exist.
+/// - The user lacks permissions to remove the file.
+pub fn delete_file_hash(objects_path: &PathBuf, file_hash: &String) -> io::Result<()> {
+    let folder_name = &file_hash[..3];
+    let file_name = &file_hash[3..];
+
+    let final_path = Path::join(objects_path, folder_name).join(file_name);
+    fs::remove_file(final_path)?;
+
+    Ok(())
 }
 
 pub fn get_objects_path() -> Result<PathBuf, io::Error> {
