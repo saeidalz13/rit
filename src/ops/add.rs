@@ -1,14 +1,13 @@
-use std::io::ErrorKind;
+use std::io::{self, ErrorKind};
 use std::os::unix::fs::MetadataExt;
 use std::{
     fs,
     path::{Path, PathBuf},
 };
 
+use crate::models::indexmodels::{IndexEntry, IndexHeader};
 use crate::utils::hashutils::get_hash_from_file;
-use crate::utils::ioutils::{
-    get_objects_path, read_index, save_file_hash, write_index, IndexEntry, IndexHeader,
-};
+use crate::utils::ioutils::{get_objects_path, read_index, save_file_hash, write_index};
 
 fn is_path_processable(path: &PathBuf) -> bool {
     if path.is_dir() {
@@ -25,12 +24,10 @@ fn is_path_processable(path: &PathBuf) -> bool {
 }
 
 fn get_file_path_info(path: &PathBuf) -> (String, u32) {
-    let file_path;
-    if !path.to_str().unwrap().starts_with("./") {
-        file_path = format!("{}", Path::new(".").join(path).to_string_lossy());
-    } else {
-        file_path = format!("{}", path.to_string_lossy());
-    }
+    let file_path = match !path.to_str().unwrap().starts_with("./") {
+        true => format!("{}", Path::new(".").join(path).to_string_lossy()),
+        false => format!("{}", path.to_string_lossy()),
+    };
 
     let file_path_len = file_path.as_bytes().len() as u32;
     (file_path, file_path_len)
@@ -40,7 +37,7 @@ fn get_file_path_info(path: &PathBuf) -> (String, u32) {
 /// First it checks what files exist if .rit/INDEX exists.
 /// If the required files already added, then it does nothing.
 /// Any new requested files will be added.
-pub fn add_rit(paths: Vec<&PathBuf>) -> Result<bool, Box<dyn std::error::Error>> {
+pub fn add_rit(paths: Vec<PathBuf>) -> Result<bool, Box<dyn std::error::Error>> {
     let objects_path = get_objects_path()?;
 
     let mut index_entries: Vec<IndexEntry> = vec![];
@@ -64,7 +61,7 @@ pub fn add_rit(paths: Vec<&PathBuf>) -> Result<bool, Box<dyn std::error::Error>>
 
     let all_paths_len = paths.len();
     let mut success: usize = 0;
-    for path in paths.into_iter() {
+    for path in paths.iter() {
         if !is_path_processable(path) {
             continue;
         }
@@ -83,7 +80,10 @@ pub fn add_rit(paths: Vec<&PathBuf>) -> Result<bool, Box<dyn std::error::Error>>
         match save_file_hash(&file_hash, &objects_path, &content) {
             Ok(_) => {}
             Err(e) => {
-                println!("hash save error: {}", e);
+                match e.kind() {
+                    io::ErrorKind::AlreadyExists => success += 1,
+                    _ => println!("hash save error: {}", e),
+                }
                 continue;
             }
         }

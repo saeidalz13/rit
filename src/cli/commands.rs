@@ -1,4 +1,4 @@
-use clap::{arg, value_parser, Command};
+use clap::{arg, value_parser, Arg, ArgAction, Command};
 use std::path::PathBuf;
 
 pub fn get_commands() -> Command {
@@ -12,7 +12,20 @@ pub fn get_commands() -> Command {
             Command::new("add")
                 .about("add files to rit memory")
                 .arg_required_else_help(true)
-                .arg(arg!(<PATH>..."paths to add").value_parser(value_parser!(PathBuf))),
+                .arg(
+                    arg!(<PATH>..."paths to add")
+                        .value_parser(value_parser!(PathBuf))
+                        .required(false),
+                )
+                .arg(
+                    Arg::new("all")
+                        .short('a')
+                        .long("all")
+                        .help("Add all files to rit memory")
+                        .action(ArgAction::SetTrue),
+                    // implicitely set to false
+                    // .required(false)
+                ),
         )
         // init command
         .subcommand(Command::new("init").about("initialize a repo"))
