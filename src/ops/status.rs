@@ -11,7 +11,7 @@ use std::{
 
 fn get_head_commit_path(objects_path: &Path) -> io::Result<PathBuf> {
     let main_file = Path::new("./.rit/refs/heads/main");
-    let commit_hash = fs::read_to_string(main_file)?;
+    let commit_hash = hex::encode(fs::read(main_file)?);
 
     let commit_dir = &commit_hash[..3];
     let commit_filename = &commit_hash[3..];
