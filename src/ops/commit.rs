@@ -1,4 +1,7 @@
-use crate::utils::{hashutils::get_hash_from_file, ioutils};
+use crate::{
+    models::indexmodels::IndexEntry,
+    utils::{hashutils::get_hash_from_file, ioutils},
+};
 use std::{
     fs, io,
     io::Write,
@@ -8,9 +11,7 @@ use std::{
 /// Tree file which contains:
 /// - <MODE> <FILENAME> <HASH>
 /// - where <MODE> is permission in octal. (100644 normal files) (100755 executables) (040000 subdirs), etc.
-fn write_tree_file(objects_path: &PathBuf) -> io::Result<Vec<u8>> {
-    let (_, ies) = ioutils::read_index()?;
-
+fn write_tree_file(objects_path: &PathBuf, ies: Vec<IndexEntry>) -> io::Result<Vec<u8>> {
     let mut tree_content: Vec<u8> = Vec::new();
 
     for ie in ies.iter() {
@@ -45,12 +46,11 @@ fn write_tree_file(objects_path: &PathBuf) -> io::Result<Vec<u8>> {
 /// - com <COMMITTER_NAME> <EMAIL> <DATE_SEC> <PERMISSION> (variable bytes)
 ///
 /// <COMMIT_MSG> (variable bytes)
-fn write_commit_file(
-    objects_path: &PathBuf,
-    parent_commit_hash: Vec<u8>,
+fn prepare_commit_content(
+    parent_commit_hash: &Vec<u8>,
     tree_file_hash: Vec<u8>,
     commit_msg: &str,
-) -> io::Result<String> {
+) -> Vec<u8> {
     let mut commit_content: Vec<u8> = Vec::new();
 
     // 32 bytes
@@ -78,61 +78,89 @@ fn write_commit_file(
     // unknows bytes, read until end for msg
     commit_content.extend_from_slice(commit_msg.as_bytes());
 
-    let (commit_file_name, _) = get_hash_from_file(&commit_content);
-    ioutils::save_file_hash(&commit_file_name, &objects_path, &commit_content)?;
-
-    Ok(commit_file_name)
+    commit_content
 }
 
-fn fetch_parent_commit_hash(main_file: &Path) -> io::Result<(Vec<u8>, bool)> {
-    let mut parent_commit_hash: Vec<u8> = Vec::new();
-    let mut main_file_exists = false;
-    if main_file.exists() {
-        parent_commit_hash = fs::read(main_file)?;
-        main_file_exists = true;
-    }
+fn write_commit_file(objects_path: &PathBuf, commit_content: Vec<u8>) -> io::Result<Vec<u8>> {
+    let (commit_file_name, commit_file_hash) = get_hash_from_file(&commit_content);
+    ioutils::save_file_hash(&commit_file_name, &objects_path, &commit_content)?;
 
-    Ok((parent_commit_hash, main_file_exists))
+    Ok(commit_file_hash)
+}
+
+fn fetch_parent_commit_hash(main_file: &Path) -> io::Result<Vec<u8>> {
+    let parent_commit_hash = match main_file.exists() {
+        true => fs::read(main_file)?,
+        false => Vec::new(),
+    };
+
+    Ok(parent_commit_hash)
 }
 
 fn write_head_commit(
-    main_file_exists: bool,
+    parent_commit_exists: bool,
     main_file: &Path,
-    commit_file_name: String,
-) -> io::Result<bool> {
+    commit_file_name: Vec<u8>,
+) -> io::Result<()> {
     let mut f: fs::File;
-    if main_file_exists {
+    if parent_commit_exists {
         f = fs::OpenOptions::new().write(true).open(main_file)?;
     } else {
         fs::create_dir_all(main_file.parent().unwrap())?;
         f = fs::File::create(main_file).unwrap();
     }
-    f.write_all(commit_file_name.as_bytes())?;
-
-    Ok(true)
+    f.write_all(&commit_file_name)?;
+    Ok(())
 }
 
 pub fn commit_rit(commit_msg: &str) {
-    let objects_path = ioutils::get_objects_path().unwrap();
-    let main_file = Path::new("./.rit/refs/heads/main");
-    let (parent_commit_hash, main_file_exists) = fetch_parent_commit_hash(main_file).unwrap();
+    let objects_path = match ioutils::get_objects_path() {
+        Ok(op) => op,
+        Err(e) => {
+            eprintln!("Error Getting 'objects' Path: {}", e);
+            return;
+        }
+    };
 
-    let tree_file_hash: Vec<u8>;
-    match write_tree_file(&objects_path) {
-        Ok(p) => tree_file_hash = p,
+    let main_file = Path::new("./.rit/refs/heads/main");
+    let parent_commit_hash = match fetch_parent_commit_hash(main_file) {
+        Ok(pa) => pa,
+        Err(e) => {
+            eprintln!("Error Fetching Parent Commit Hash: {}", e);
+            return;
+        }
+    };
+
+    let index_entries = match ioutils::read_index() {
+        Ok((_, ie)) => ie,
+        Err(e) => {
+            eprintln!("Error Reading Index: {}", e);
+            return;
+        }
+    };
+
+    let tree_file_hash = match write_tree_file(&objects_path, index_entries) {
+        Ok(p) => p,
+        Err(e) => {
+            match e.kind() {
+                io::ErrorKind::AlreadyExists => println!("** Everything Up-to-date **"),
+                _ => eprintln!("Error Writing Tree File: {}", e),
+            }
+            return;
+        }
+    };
+
+    let commit_content = prepare_commit_content(&parent_commit_hash, tree_file_hash, commit_msg);
+
+    let commit_file_hash = match write_commit_file(&objects_path, commit_content) {
+        Ok(res) => res,
         Err(e) => {
             eprintln!("{}", e);
             return;
         }
+    };
+
+    if let Err(e) = write_head_commit(!parent_commit_hash.is_empty(), main_file, commit_file_hash) {
+        eprintln!("Error Writing Head Commit: {}", e);
     }
-
-    let commit_file_name = write_commit_file(
-        &objects_path,
-        parent_commit_hash,
-        tree_file_hash,
-        commit_msg,
-    )
-    .unwrap();
-
-    write_head_commit(main_file_exists, main_file, commit_file_name).unwrap();
 }
