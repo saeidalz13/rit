@@ -41,5 +41,6 @@ pub fn get_commands() -> Command {
                         .value_parser(value_parser!(String)),
                 ),
         )
+        .subcommand(Command::new("push").about("upload the current commit to remote url"))
     // ...
 }

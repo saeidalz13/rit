@@ -1,6 +1,6 @@
 use crate::{
     cli::commands,
-    ops::{add::add_rit, commit::commit_rit, init::init_rit, status::status_rit},
+    ops::{add::add_rit, commit::commit_rit, init::init_rit, push::push_rit, status::status_rit},
     utils::ioutils::get_all_paths,
 };
 use std::path::PathBuf;
@@ -45,6 +45,8 @@ pub fn exec_cli() {
 
             commit_rit(commit_msg);
         }
+
+        Some(("push", _)) => push_rit(),
 
         _ => unreachable!(),
     }
