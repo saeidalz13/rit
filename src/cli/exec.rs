@@ -46,7 +46,11 @@ pub fn exec_cli() {
             commit_rit(commit_msg);
         }
 
-        Some(("push", _)) => push_rit(),
+        Some(("push", _)) => {
+            if let Err(e) = push_rit() {
+                eprintln!("{}", e);
+            }
+        }
 
         _ => unreachable!(),
     }
