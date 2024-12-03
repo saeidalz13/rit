@@ -80,16 +80,17 @@ pub fn status_rit() {
     let mut check_commited = true;
     match retrieve_committed_content() {
         Ok(cc) => committed_content = cc,
-        Err(e) => {
-            if e.kind() != io::ErrorKind::NotFound {
+        Err(e) => match e.kind() {
+            io::ErrorKind::NotFound => {
                 eprintln!("Error reading committed content: {}", e);
                 return;
-            } else {
+            }
+            _ => {
                 committed_content = HashMap::new();
                 check_commited = false;
             }
-        }
-    }
+        },
+    };
 
     let mut untracked: Vec<PathBuf> = Vec::new();
     let mut modifed_unstaged: Vec<PathBuf> = Vec::new();
