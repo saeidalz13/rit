@@ -1,6 +1,6 @@
 use core::num;
 
-use crate::utils::colorutils::{BOLD_RED, FORMAT_RESET};
+use crate::utils::terminalutils::{BOLD_RED, FORMAT_RESET};
 
 pub enum CliError {
     IOError(std::io::Error),

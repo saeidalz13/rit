@@ -1,6 +1,9 @@
 use crate::{
     cli::commands,
-    ops::{add::add_rit, commit::commit_rit, init::init_rit, push::push_rit, status::status_rit},
+    ops::{
+        add::add_rit, commit::commit_rit, init::init_rit, push::push_rit,
+        remote::rit_remote_set_url, status::status_rit,
+    },
     utils::ioutils::get_all_paths,
 };
 use std::path::PathBuf;
@@ -54,15 +57,11 @@ pub fn exec_cli() {
 
         Some(("remote", sub_matches)) => match sub_matches.subcommand() {
             Some(("set-url", set_url_matches)) => {
-                let remote_url = match set_url_matches.get_one::<String>("URL") {
-                    Some(url) => url,
-                    None => {
-                        eprintln!("URL is required for 'set-url'.");
-                        return;
+                if let Some(remote_url) = set_url_matches.get_one::<String>("URL") {
+                    if let Err(e) = rit_remote_set_url(remote_url) {
+                        eprintln!("{}", e);
                     }
                 };
-
-                println!("{}", remote_url);
             }
 
             _ => eprintln!("Unknown or missing subcommand for 'remote'."),

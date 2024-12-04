@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::{fs, path::Path};
 use walkdir::{DirEntry, WalkDir};
 
+use crate::models::errormodels::CliError;
 use crate::models::indexmodels::{IndexEntry, IndexHeader};
 
 const IGNORED_PATHS: &[&str] = &[".", ".ritignore"];
@@ -254,4 +255,16 @@ pub fn get_all_paths() -> Vec<PathBuf> {
     }
 
     paths
+}
+
+pub fn get_config_path() -> Result<PathBuf, CliError> {
+    let config_path = PathBuf::from(".rit/config");
+    if !config_path.exists() {
+        return Err(CliError::from(io::Error::new(
+            io::ErrorKind::NotFound,
+            "config file does not exist.",
+        )));
+    }
+
+    Ok(config_path)
 }
