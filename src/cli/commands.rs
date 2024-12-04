@@ -42,5 +42,18 @@ pub fn get_commands() -> Command {
                 ),
         )
         .subcommand(Command::new("push").about("upload the current commit to remote url"))
+        .subcommand(
+            Command::new("remote")
+                .about("Setting variables for remote")
+                .subcommand_required(true)
+                .arg_required_else_help(true)
+                .subcommand(
+                    Command::new("set-url").about("set remote url").arg(
+                        arg!(<URL>"url to add")
+                            .value_parser(value_parser!(String))
+                            .required(true),
+                    ),
+                ),
+        )
     // ...
 }

@@ -52,6 +52,22 @@ pub fn exec_cli() {
             }
         }
 
+        Some(("remote", sub_matches)) => match sub_matches.subcommand() {
+            Some(("set-url", set_url_matches)) => {
+                let remote_url = match set_url_matches.get_one::<String>("URL") {
+                    Some(url) => url,
+                    None => {
+                        eprintln!("URL is required for 'set-url'.");
+                        return;
+                    }
+                };
+
+                println!("{}", remote_url);
+            }
+
+            _ => eprintln!("Unknown or missing subcommand for 'remote'."),
+        },
+
         _ => unreachable!(),
     }
 }
