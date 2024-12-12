@@ -9,5 +9,5 @@ pub const BOLD_WHITE: &str = "\x1b[1;37m"; // Bold White
 pub const FORMAT_RESET: &str = "\x1b[0m"; // Reset formatting
 
 pub fn print_success_msg(msg: &'static str) {
-    println!("{}SUCCESS{}: {}", BOLD_GREEN, FORMAT_RESET, msg)
+    println!("{}[SUCCESS]{} {}", BOLD_GREEN, FORMAT_RESET, msg)
 }
