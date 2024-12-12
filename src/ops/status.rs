@@ -23,7 +23,12 @@ fn get_head_commit_path(objects_path: &Path) -> io::Result<PathBuf> {
 
 fn retrieve_committed_content() -> io::Result<HashMap<PathBuf, Vec<u8>>> {
     let objects_path = ioutils::get_objects_path()?;
-    let commit_path = get_head_commit_path(&objects_path)?;
+    let mut committed_content: HashMap<PathBuf, Vec<u8>> = HashMap::new();
+
+    let commit_path = match get_head_commit_path(&objects_path) {
+        Ok(c) => c,
+        Err(_) => return Ok(committed_content),
+    };
 
     let commit_content = fs::read(commit_path)?;
 
@@ -41,7 +46,6 @@ fn retrieve_committed_content() -> io::Result<HashMap<PathBuf, Vec<u8>>> {
         .join(&tree_hash[3..]);
     let tree_content = fs::read(tree_path)?;
 
-    let mut committed_content: HashMap<PathBuf, Vec<u8>> = HashMap::new();
     let mut pos: usize = 0;
     while pos < tree_content.len() - 1 {
         // let mode = &tree_content[pos..pos+4];
