@@ -4,7 +4,7 @@ use crate::{
         add::add_rit, commit::commit_rit, init::init_rit, push::push_rit,
         remote::rit_remote_set_url, status::status_rit,
     },
-    utils::{ioutils::get_all_paths, terminalutils::print_success_msg},
+    utils::ioutils::get_all_paths,
 };
 use std::path::PathBuf;
 
@@ -36,10 +36,11 @@ pub fn exec_cli() {
             };
         }
 
-        Some(("init", _)) => match init_rit() {
-            Ok(_) => print_success_msg("rit initalized!"),
-            Err(e) => eprintln!("{:?}", e.to_string()),
-        },
+        Some(("init", _)) => {
+            if let Err(e) = init_rit() {
+                eprintln!("{:?}", e.to_string())
+            }
+        }
 
         Some(("status", _)) => status_rit(),
 

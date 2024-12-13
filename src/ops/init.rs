@@ -3,6 +3,7 @@ use std::io::Write;
 use std::{fs, path::Path};
 
 use crate::models::errormodels::CliError;
+use crate::utils::terminalutils::print_success_msg;
 
 fn create_config() -> Result<(), CliError> {
     let mut f = fs::File::create_new(".rit/config")?;
@@ -11,16 +12,15 @@ fn create_config() -> Result<(), CliError> {
     // TODO: look into it to see what each line is
     f.write(
         b"[core]
-    bare=false
-    repositoryformatversion=0
-    filemode=true
-    ignorecase=true
-    precomposeunicode=true
-    logallrefupdates=true
-
-    [remote_origin]
-    url=
-    fetch=
+bare=false
+repositoryformatversion=0
+filemode=true
+ignorecase=true
+precomposeunicode=true
+logallrefupdates=true
+[remote_origin]
+url=
+fetch=
     ",
     )?;
 
@@ -45,5 +45,6 @@ pub fn init_rit() -> Result<(), CliError> {
     fs::create_dir(".rit/rr-cache")?;
     create_config()?;
 
+    print_success_msg("rit initalized!");
     Ok(())
 }
